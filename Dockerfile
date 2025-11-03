@@ -12,9 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxrender1 \
     libxext6 \
     tzdata \
-    ntpdate \
- && ntpdate -u time.google.com \
- && rm -rf /var/lib/apt/lists/*
+    ntpsec-ntpdate && ntpdate -u time.google.com && rm -rf /var/lib/apt/lists/*
 
 # Set timezone to UTC
 ENV TZ=UTC
