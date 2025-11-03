@@ -9,7 +9,7 @@ import asyncio
 import subprocess
 import logging
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from pyrogram import Client, filters
 from pyrogram.types import Message
@@ -64,35 +64,23 @@ START_TIME = datetime.utcnow()
 # ------------------ Helper functions ------------------
 
 def hhmmss_to_seconds(hms_str: str) -> float:
-    """
-    Convert 'HH:MM:SS.mmm' or 'MM:SS.mmm' to seconds (float).
-    Digit-by-digit safe conversion.
-    """
     parts = hms_str.strip().split(':')
-    # ensure parts are numeric strings possibly with decimal
     try:
         if len(parts) == 3:
-            h = int(parts[0])
-            m = int(parts[1])
-            s = float(parts[2])
+            h = int(parts[0]); m = int(parts[1]); s = float(parts[2])
             return h * 3600 + m * 60 + s
         elif len(parts) == 2:
-            m = int(parts[0])
-            s = float(parts[1])
+            m = int(parts[0]); s = float(parts[1])
             return m * 60 + s
         else:
             return float(parts[0])
     except Exception:
-        # fallback: try float conversion
         try:
             return float(hms_str)
         except:
             return 0.0
 
 def get_video_duration_seconds(path: str) -> float:
-    """
-    Use ffprobe to get duration in seconds. Returns float seconds.
-    """
     try:
         cmd = ["ffprobe", "-v", "error", "-show_entries",
                "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", path]
@@ -104,18 +92,12 @@ def get_video_duration_seconds(path: str) -> float:
         return 0.0
 
 def parse_ffmpeg_time_from_line(line: str) -> float:
-    """
-    Parse 'time=HH:MM:SS.mmm' from ffmpeg stderr line and return seconds.
-    """
     m = re.search(r"time=(\d+:\d+:\d+\.\d+|\d+:\d+\.\d+|\d+\.\d+)", line)
     if not m:
         return 0.0
     return hhmmss_to_seconds(m.group(1))
 
 def parse_params(params: str):
-    """
-    Parse "x=..:y=..:w=..:h=.." into dict of strings
-    """
     parts = params.replace(" ", "").split(":")
     d = {}
     for p in parts:
@@ -155,12 +137,7 @@ async def update_job(job_id, patch: dict):
 # ------------------ Processing functions ------------------
 
 def ffmpeg_delogo_with_progress(infile: str, outfile: str, params: str, progress_callback):
-    """
-    Run ffmpeg delogo and call progress_callback(percent: int) periodically.
-    progress_callback receives integer 0..100.
-    """
     duration = get_video_duration_seconds(infile)
-    # ffmpeg command
     cmd = [
         "ffmpeg", "-y", "-i", infile,
         "-vf", f"delogo={params}",
@@ -168,7 +145,6 @@ def ffmpeg_delogo_with_progress(infile: str, outfile: str, params: str, progress
         "-preset", "veryfast",
         outfile
     ]
-
     logger.info("FFMPEG command: %s", " ".join(cmd))
     proc = subprocess.Popen(cmd, stderr=subprocess.PIPE, stdout=subprocess.DEVNULL, text=True, bufsize=1)
 
@@ -182,13 +158,11 @@ def ffmpeg_delogo_with_progress(infile: str, outfile: str, params: str, progress
                     break
                 time.sleep(0.1)
                 continue
-            # parse time=
             cur_seconds = parse_ffmpeg_time_from_line(line)
             if duration > 0:
                 percent = int(min(100, (cur_seconds / duration) * 100))
             else:
                 percent = 0
-            # throttle updates: at most every 1.5s or on 2% change
             now = time.time()
             if percent != last_percent and (now - last_update_time > 1.5 or abs(percent - last_percent) >= 2):
                 last_percent = percent
@@ -201,16 +175,12 @@ def ffmpeg_delogo_with_progress(infile: str, outfile: str, params: str, progress
         if ret != 0:
             raise RuntimeError("ffmpeg exited with code %d" % ret)
     finally:
-        # ensure process cleanup
         try:
             proc.kill()
         except:
             pass
 
 def opencv_inpaint_with_progress(infile: str, outfile: str, x:int, y:int, w:int, h:int, progress_callback):
-    """
-    Frame-by-frame inpaint with OpenCV and progress callback(percent int).
-    """
     import cv2
     cap = cv2.VideoCapture(infile)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 0
@@ -236,11 +206,9 @@ def opencv_inpaint_with_progress(infile: str, outfile: str, x:int, y:int, w:int,
         inpainted = cv2.inpaint(frame, mask, 3, cv2.INPAINT_TELEA)
         out.write(inpainted)
         frame_idx += 1
-        # compute percent
         if total_frames > 0:
             percent = int((frame_idx / total_frames) * 100)
         else:
-            # fallback: estimate via fps+unknown duration, update every N frames
             percent = int(min(99, frame_idx % 100))
         now = time.time()
         if percent != last_percent and (now - last_update_time > 1.5 or abs(percent - last_percent) >= 2):
@@ -253,18 +221,12 @@ def opencv_inpaint_with_progress(infile: str, outfile: str, x:int, y:int, w:int,
 
     cap.release()
     out.release()
-    # final callback 100
     try:
         progress_callback(100)
     except:
         pass
 
 def process_video_sync(job_doc, progress_updater):
-    """
-    Synchronous processing wrapper called in executor.
-    progress_updater(percent:int) will be called to update DB/UI.
-    Returns outfile path or raises.
-    """
     infile = job_doc["infile"]
     base = Path(infile)
     outfile = str(OUTPUT_DIR / (base.stem + "_processed.mp4"))
@@ -273,15 +235,11 @@ def process_video_sync(job_doc, progress_updater):
     params = job_doc.get("params", "")
 
     if method == "delogo":
-        # use ffmpeg with progress parsing
         ffmpeg_delogo_with_progress(infile, outfile, params, progress_updater)
     else:
-        # parse params to coords
         p = parse_params(params)
-        # defaults
         w = int(p.get("w", "150"))
         h = int(p.get("h", "50"))
-        # determine width/height via cv2
         import cv2
         cap = cv2.VideoCapture(infile)
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -318,9 +276,6 @@ def process_video_sync(job_doc, progress_updater):
 # ------------------ Bot Handlers & Admin Commands ------------------
 
 def admin_only(func):
-    """
-    Decorator to ensure only admin can run command.
-    """
     async def wrapper(client, message: Message):
         uid = message.from_user.id if message.from_user else None
         if uid != ADMIN_ID:
@@ -344,7 +299,6 @@ async def start_cmd(client: Client, message: Message):
 @APP.on_message(filters.command("status") & filters.private)
 @admin_only
 async def cmd_status(client: Client, message: Message):
-    # admin-only status: uptime, job counts
     uptime = datetime.utcnow() - START_TIME
     jobs_total = await COL_JOBS.count_documents({})
     jobs_processing = await COL_JOBS.count_documents({"status": "processing"})
@@ -362,7 +316,6 @@ async def cmd_status(client: Client, message: Message):
 @APP.on_message(filters.command("jobs") & filters.private)
 @admin_only
 async def cmd_jobs(client: Client, message: Message):
-    # list last 10 jobs
     cur = COL_JOBS.find().sort("created_at", -1).limit(10)
     jobs = await cur.to_list(length=10)
     if not jobs:
@@ -381,12 +334,6 @@ async def cmd_jobs(client: Client, message: Message):
 @APP.on_message(filters.command("set_params") & filters.private)
 @admin_only
 async def cmd_set_params(client: Client, message: Message):
-    """
-    Usage:
-    /set_params delogo x=iw-160:y=ih-60:w=150:h=50
-    or
-    /set_params inpaint x=10:y=10:w=100:h=40
-    """
     global WATERMARK_METHOD, WATERMARK_PARAMS
     text = message.text or ""
     parts = text.split(maxsplit=2)
@@ -401,11 +348,10 @@ async def cmd_set_params(client: Client, message: Message):
     WATERMARK_METHOD = method
     if params:
         WATERMARK_PARAMS = params
-    # save to settings collection
     await COL_SETTINGS.update_one({"_id": "processing"}, {"$set": {"method": WATERMARK_METHOD, "params": WATERMARK_PARAMS}}, upsert=True)
     await message.reply_text(f"Updated method={WATERMARK_METHOD} params={WATERMARK_PARAMS}")
 
-@APP.on_message((filters.video | filters.document) & ~filters.edited)
+@APP.on_message((filters.video | filters.document))
 async def on_video(client: Client, message: Message):
     m = message
     user = m.from_user
@@ -413,7 +359,6 @@ async def on_video(client: Client, message: Message):
         await m.reply_text("User information missing.")
         return
 
-    # Check size
     size = 0
     if m.video:
         size = m.video.file_size or 0
@@ -426,31 +371,24 @@ async def on_video(client: Client, message: Message):
 
     status_msg = await m.reply_text("Video received — queue mein add kar rahi hun...")
     try:
-        # download
         download_path = await m.download(file_name=str(DOWNLOAD_DIR))
-        # create job in DB
         job = await create_job(user_id=user.id, tg_message_id=m.message_id, infile=download_path, method=WATERMARK_METHOD, params=WATERMARK_PARAMS)
         await update_job(job["_id"], {"status": "processing", "progress": 0})
         await status_msg.edit("Processing started — progress batati hun...")
 
-        # define progress updater to update DB and message
         async def progress_update(percent: int):
-            # update DB
             try:
                 await update_job(job["_id"], {"progress": int(percent)})
             except Exception:
                 pass
-            # edit status message occasionally (throttle inside processing functions as well)
             try:
                 await status_msg.edit(f"Processing: {int(percent)}%")
             except Exception:
                 pass
 
-        # wrapper to call async progress_update from sync thread
         def progress_cb(percent: int):
             asyncio.get_event_loop().create_task(progress_update(percent))
 
-        # run processing in executor
         loop = asyncio.get_event_loop()
         try:
             outfile = await loop.run_in_executor(None, process_video_sync, job, progress_cb)
@@ -459,7 +397,6 @@ async def on_video(client: Client, message: Message):
             await status_msg.edit(f"Processing failed: {e}")
             return
 
-        # mark done and send file
         await update_job(job["_id"], {"status": "done", "outfile": outfile, "progress": 100})
         await m.reply_video(video=outfile, caption="Watermark हटाकर भेज रही hun.")
         await status_msg.delete()
@@ -467,7 +404,6 @@ async def on_video(client: Client, message: Message):
         logger.exception("Error handling video")
         await status_msg.edit(f"Kuchh gadbad hui: {e}")
     finally:
-        # cleanup files older than 1 hour
         try:
             cutoff = datetime.utcnow().timestamp() - 3600
             for p in DOWNLOAD_DIR.iterdir():
@@ -494,7 +430,6 @@ async def load_settings():
         WATERMARK_PARAMS = s.get("params", WATERMARK_PARAMS)
         logger.info("Loaded settings from DB: %s %s", WATERMARK_METHOD, WATERMARK_PARAMS)
 
-# Register startup event
 @APP.on_connect()
 async def on_connect_handler(client, _):
     await load_settings()
