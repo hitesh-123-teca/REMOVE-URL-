@@ -1,30 +1,29 @@
-# Use lightweight Python image
 FROM python:3.10-slim
 
-# Set working directory
 WORKDIR /app
 
-# Install system dependencies (without time sync)
+# Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr \
     ffmpeg \
     libsm6 \
     libxrender1 \
     libxext6 \
-    tzdata && rm -rf /var/lib/apt/lists/*
+    ntpdate \
+ && rm -rf /var/lib/apt/lists/*
+
+# Sync system time (important for Pyrogram)
+RUN ntpdate -u time.google.com || true
 
 # Upgrade pip
 RUN pip install --upgrade pip
 
-# Copy requirements and install Python dependencies
+# Copy and install Python dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install -r requirements.txt
 
-# Copy the application code
+# Copy bot files
 COPY . .
 
-# Set timezone (optional)
-ENV TZ=Asia/Kolkata
-
-# Run the bot
-CMD ["python3", "bot.py"]
+# Run time sync before starting the bot
+CMD ntpdate -u time.google.com || true && python3 bot.py
