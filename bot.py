@@ -12,6 +12,17 @@ import logging
 from pathlib import Path
 from datetime import datetime
 
+# ------------------ MANUAL TIME SYNC (fix for Pyrogram [16] error) ------------------
+import datetime as dt
+utc_now = dt.datetime.utcnow()
+local_now = dt.datetime.now()
+offset = (utc_now - local_now).total_seconds()
+if abs(offset) > 1:
+    print(f"[INFO] Local time offset detected: {offset:.2f}s")
+    print("[INFO] Adjusting Pyrogram timestamps internally (UTC sync active).")
+    time.time = lambda: dt.datetime.utcnow().timestamp()
+# ------------------------------------------------------------------------------------
+
 from pyrogram import Client, filters
 from pyrogram.types import Message
 import motor.motor_asyncio
@@ -20,8 +31,7 @@ import motor.motor_asyncio
 BOT_TOKEN = "7852091851:AAHQr_w4hi-RuJ5sJ8JvQCo_fOZtf6EWhvk"
 API_ID = 123456
 API_HASH = "db274cb8e9167e731d9c8305197badeb"
-MONGO_URI = "mongodb+srv://moviescorn:moviescorn@hitu.4jr5k.mongodb.net/?retryWrites=true&w=majority&appName=Hitu"  # e.g. mongodb+srv://user:pass@host/dbname?retryWrites=true&w=majority
-# Admin ID (keep as provided)
+MONGO_URI = "mongodb+srv://moviescorn:moviescorn@hitu.4jr5k.mongodb.net/?retryWrites=true&w=majority&appName=Hitu"
 ADMIN_ID = 6861892595
 # -------------------------------------------------------------------------
 
@@ -241,6 +251,5 @@ async def load_settings():
         logger.info("Loaded settings from DB: %s %s", WATERMARK_METHOD, WATERMARK_PARAMS)
 
 if __name__ == "__main__":
-    # load settings then run bot
     asyncio.get_event_loop().run_until_complete(load_settings())
     APP.run()
