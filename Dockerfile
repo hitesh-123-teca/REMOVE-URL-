@@ -1,4 +1,4 @@
-# Use official Python image
+# Use lightweight Python image
 FROM python:3.10-slim
 
 # Set working directory
@@ -14,9 +14,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tzdata \
     ntpsec-ntpdate && ntpdate -u time.google.com && rm -rf /var/lib/apt/lists/*
 
-# Set timezone to UTC
-ENV TZ=UTC
-
 # Upgrade pip
 RUN pip install --upgrade pip
 
@@ -24,11 +21,11 @@ RUN pip install --upgrade pip
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy project files
+# Copy the application code
 COPY . .
 
-# Just a small log before running
-RUN echo "System time synchronized successfully with Google NTP server."
+# Set timezone (optional)
+ENV TZ=Asia/Kolkata
 
-# Default command
-CMD ["bash", "-c", "ntpdate -u time.google.com || true && python3 bot.py"]
+# Run the bot
+CMD ["python3", "main.py"]
