@@ -2,14 +2,14 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies (time sync fix)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr \
     ffmpeg \
     libsm6 \
     libxrender1 \
     libxext6 \
-    ntpdate \
+    ntpsec-ntpdate \
  && rm -rf /var/lib/apt/lists/*
 
 # Sync system time (important for Pyrogram)
