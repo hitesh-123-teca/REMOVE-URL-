@@ -27,4 +27,4 @@ COPY . .
 ENV TZ=Asia/Kolkata
 
 # Run the bot
-CMD ["python3", "main.py"]
+CMD ["python3", "bot.py"]
