@@ -4,15 +4,14 @@ FROM python:3.10-slim
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies and sync time
+# Install system dependencies (without time sync)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr \
     ffmpeg \
     libsm6 \
     libxrender1 \
     libxext6 \
-    tzdata \
-    ntpsec-ntpdate && ntpdate -u time.google.com && rm -rf /var/lib/apt/lists/*
+    tzdata && rm -rf /var/lib/apt/lists/*
 
 # Upgrade pip
 RUN pip install --upgrade pip
