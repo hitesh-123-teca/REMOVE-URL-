@@ -1,27 +1,36 @@
-FROM python:3.11-slim
+# Use official Python image
+FROM python:3.10-slim
 
-ENV DEBIAN_FRONTEND=noninteractive
-
+# Set working directory
 WORKDIR /app
 
-# system deps for ffmpeg and opencv
+# Install system dependencies and sync time
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    tesseract-ocr \
     ffmpeg \
-    libgl1 \
-    libglib2.0-0 \
-    build-essential \
+    libsm6 \
+    libxrender1 \
+    libxext6 \
+    tzdata \
+    ntpdate \
+ && ntpdate -u time.google.com \
  && rm -rf /var/lib/apt/lists/*
 
+# Set timezone to UTC
+ENV TZ=UTC
+
+# Upgrade pip
+RUN pip install --upgrade pip
+
+# Copy requirements and install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Copy project files
 COPY . .
 
-RUN mkdir -p /tmp/wm_bot/download /tmp/wm_bot/out
+# Just a small log before running
+RUN echo "System time synchronized successfully with Google NTP server."
 
-# Default processing behavior (override via ENV if needed)
-ENV WATERMARK_METHOD=delogo
-ENV WATERMARK_PARAMS="x=iw-160:y=ih-60:w=150:h=50"
-ENV MAX_FILE_SIZE=500000000
-
-CMD ["python", "bot.py"]
+# Default command
+CMD ["bash", "-c", "ntpdate -u time.google.com || true && python3 bot.py"]
