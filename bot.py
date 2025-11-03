@@ -17,10 +17,10 @@ from pyrogram.types import Message
 import motor.motor_asyncio
 
 # ------------------ CREDENTIAL PLACEHOLDERS (REPLACE BEFORE DEPLOY) ------------------
-BOT_TOKEN = "PUT_YOUR_BOT_TOKEN_HERE"
+BOT_TOKEN = "7852091851:AAHQr_w4hi-RuJ5sJ8JvQCo_fOZtf6EWhvk"
 API_ID = 123456
-API_HASH = "PUT_YOUR_API_HASH_HERE"
-MONGO_URI = "PUT_YOUR_MONGO_URI_HERE"  # e.g. mongodb+srv://user:pass@host/dbname?retryWrites=true&w=majority
+API_HASH = "db274cb8e9167e731d9c8305197badeb"
+MONGO_URI = "mongodb+srv://moviescorn:moviescorn@hitu.4jr5k.mongodb.net/?retryWrites=true&w=majority&appName=Hitu"  # e.g. mongodb+srv://user:pass@host/dbname?retryWrites=true&w=majority
 # Admin ID (keep as provided)
 ADMIN_ID = 6861892595
 # -------------------------------------------------------------------------
