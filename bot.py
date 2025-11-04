@@ -15,26 +15,34 @@ from pymongo import MongoClient
 from pyrogram import Client, filters
 from pyrogram.types import Message
 
-# -------------------- CONFIGURATION --------------------
+# -------------------- CONFIG --------------------
 BOT_TOKEN = "7852091851:AAHQr_w4hi-RuJ5sJ8JvQCo_fOZ"
 API_ID = 29227473
 API_HASH = "d61b2bdb253758bcb90782bb17d4cc0c"
 ADMIN_IDS = [6861892595]
 MONGO_URI = "mongodb+srv://moviescorn:moviescorn@hitu.4jr5k.mongodb.net/?retryWrites=true&w=majority&appName=Hitu"
 
-# -------------------- INITIAL SETUP --------------------
-try:
-    os.system("ntpdate -u time.google.com || true")
-except Exception:
-    pass
-
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-log = logging.getLogger("bot")
-
 WORKDIR = Path("/tmp/bot_work")
 WORKDIR.mkdir(parents=True, exist_ok=True)
 
-# -------------------- MONGO CONNECTION --------------------
+# -------------------- LOGGING --------------------
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+log = logging.getLogger("bot")
+
+# -------------------- TIME SYNC (strong retry) --------------------
+def sync_time(retry=3):
+    for i in range(retry):
+        try:
+            os.system("ntpdate -u time.google.com || true")
+            log.info("Time sync attempt %s done", i + 1)
+            return
+        except Exception as e:
+            log.warning("Time sync failed: %s", e)
+            time.sleep(2)
+
+sync_time(5)
+
+# -------------------- MONGO CONNECT --------------------
 try:
     mongo_client = MongoClient(MONGO_URI)
     db = mongo_client["remove_url_bot"]
@@ -45,7 +53,7 @@ except Exception as e:
     log.error("❌ MongoDB connection failed: %s", e)
     sys.exit(1)
 
-# -------------------- TELEGRAM CLIENT --------------------
+# -------------------- TELEGRAM BOT --------------------
 app = Client("removeurl_bot", bot_token=BOT_TOKEN, api_id=API_ID, api_hash=API_HASH)
 
 # -------------------- DATABASE HELPERS --------------------
@@ -96,7 +104,7 @@ def inpaint_image(input_path, boxes, output_path):
 def largest_box(boxes):
     if not boxes:
         return None
-    return sorted(boxes, key=lambda b: b[2]*b[3], reverse=True)[0]
+    return sorted(boxes, key=lambda b: b[2] * b[3], reverse=True)[0]
 
 def build_ffmpeg_cmd(input_video, x, y, w, h, output_video):
     return [
@@ -106,7 +114,7 @@ def build_ffmpeg_cmd(input_video, x, y, w, h, output_video):
         output_video
     ]
 
-# -------------------- PROCESSING FUNCTIONS --------------------
+# -------------------- PROCESSORS --------------------
 async def process_image(path_in, path_out, msg: Message):
     boxes = ocr_detect_boxes(path_in)
     if boxes:
@@ -139,7 +147,7 @@ async def start_cmd(_, msg):
 
 @app.on_message(filters.command("help"))
 async def help_cmd(_, msg):
-    await msg.reply_text("Commands:\n/start - Start bot\n/help - Help\n/stats - Show usage stats (admin only)")
+    await msg.reply_text("Commands:\n/start - Start bot\n/help - Help\n/stats - Admin-only usage stats")
 
 @app.on_message(filters.command("stats") & filters.user(ADMIN_IDS))
 async def stats_cmd(_, msg):
@@ -172,10 +180,7 @@ async def media_handler(_, msg):
 
     await prog.delete()
 
-# -------------------- RUN --------------------
+# -------------------- MAIN --------------------
 if __name__ == "__main__":
-    try:
-        os.system("ntpdate -u time.google.com || true")
-    except Exception:
-        pass
+    sync_time(5)
     app.run()
