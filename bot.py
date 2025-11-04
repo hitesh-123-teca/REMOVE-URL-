@@ -29,11 +29,11 @@ WORKDIR.mkdir(parents=True, exist_ok=True)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("bot")
 
-# -------------------- TIME SYNC (strong retry) --------------------
+# -------------------- TIME SYNC --------------------
 def sync_time(retry=3):
     for i in range(retry):
         try:
-            os.system("ntpdate -u time.google.com || true")
+            os.system("ntpdate -u time.google.com || ntpsec-ntpdate -u time.google.com || true")
             log.info("Time sync attempt %s done", i + 1)
             return
         except Exception as e:
@@ -104,7 +104,7 @@ def inpaint_image(input_path, boxes, output_path):
 def largest_box(boxes):
     if not boxes:
         return None
-    return sorted(boxes, key=lambda b: b[2] * b[3], reverse=True)[0]
+    return sorted(boxes, key=lambda b: b[2]*b[3], reverse=True)[0]
 
 def build_ffmpeg_cmd(input_video, x, y, w, h, output_video):
     return [
