@@ -2,7 +2,7 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-# Install dependencies (with updated ntpsec-ntpdate)
+# Install updated dependencies (ntpsec-ntpdate replaces ntpdate)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     tesseract-ocr \
@@ -13,13 +13,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tzdata \
  && rm -rf /var/lib/apt/lists/*
 
-# Sync time once
-RUN ntpdate -u time.google.com || true || ntpsec-ntpdate -u time.google.com || true
+# Initial time sync
+RUN ntpdate -u time.google.com || ntpsec-ntpdate -u time.google.com || true
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && pip install -r requirements.txt
 
 COPY . .
 
-# Final CMD ensures time sync every restart
+# Start command ensures fresh time sync
 CMD ntpdate -u time.google.com || ntpsec-ntpdate -u time.google.com || true && python3 bot.py
