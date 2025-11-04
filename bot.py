@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from pymongo import MongoClient
 from pyrogram import Client, filters
 from pyrogram.types import Message
-import ntplib  # new time sync method
+import ntplib  # network time fetch
 
 # -------------------- CONFIG --------------------
 BOT_TOKEN = "7852091851:AAHQr_w4hi-RuJ5sJ8JvQCo_fOZ"
@@ -20,17 +20,16 @@ WORKDIR.mkdir(parents=True, exist_ok=True)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("bot")
 
-# -------------------- TIME SYNC (Python method) --------------------
+# -------------------- TIME SYNC --------------------
 def sync_time():
     try:
         client = ntplib.NTPClient()
         response = client.request("time.google.com", version=3)
         offset = response.offset
-        log.info(f"✅ Network time synced (offset={offset:.6f}s)")
-        # Adjust Python’s internal clock offset
+        log.info(f"✅ Time synced with offset {offset:.6f}s")
         time.time = lambda: time._orig_time() + offset
     except Exception as e:
-        log.warning(f"Time sync skipped: {e}")
+        log.warning(f"Time sync failed: {e}")
 
 if not hasattr(time, "_orig_time"):
     time._orig_time = time.time
@@ -53,9 +52,7 @@ app = Client("removeurl_bot", bot_token=BOT_TOKEN, api_id=API_ID, api_hash=API_H
 
 # -------------------- HELPERS --------------------
 def register_user(user):
-    if not user:
-        return
-    if not users_col.find_one({"user_id": user.id}):
+    if user and not users_col.find_one({"user_id": user.id}):
         users_col.insert_one({
             "user_id": user.id,
             "username": user.username,
@@ -71,7 +68,7 @@ def save_log(user_id, file_type, status="done"):
         "timestamp": datetime.now(timezone.utc)
     })
 
-# -------------------- OCR & PROCESSING --------------------
+# -------------------- OCR --------------------
 def ocr_detect_boxes(image_path):
     img = cv2.imread(image_path)
     if img is None:
@@ -80,9 +77,8 @@ def ocr_detect_boxes(image_path):
     data = pytesseract.image_to_data(rgb, output_type=pytesseract.Output.DICT)
     boxes = []
     for i, text in enumerate(data["text"]):
-        if not text.strip():
-            continue
-        if any(k in text.lower() for k in [".com", ".in", "http", "www", "/", ".net", ".org"]):
+        t = text.strip().lower()
+        if t and any(k in t for k in [".com", ".in", "http", "www", ".net", ".org", "/"]):
             boxes.append((data["left"][i], data["top"][i], data["width"][i], data["height"][i]))
     return boxes
 
@@ -104,7 +100,7 @@ def build_ffmpeg_cmd(input_video, x, y, w, h, output_video):
             f"delogo=x={x}:y={y}:w={w}:h={h}:show=0",
             "-c:a", "copy", "-preset", "fast", output_video]
 
-# -------------------- PROCESS --------------------
+# -------------------- PROCESSORS --------------------
 async def process_image(path_in, path_out, msg):
     boxes = ocr_detect_boxes(path_in)
     if boxes:
