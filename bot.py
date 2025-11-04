@@ -1,7 +1,5 @@
 # bot.py - Advanced Watermark remover Telegram bot (final stable)
 # Admin commands + Progress indicator + MongoDB job tracking
-# IMPORTANT: This file intentionally DOES NOT include your real credentials.
-# Replace the placeholders below with your actual BOT_TOKEN, API_ID, API_HASH and MONGO_URI before deploying.
 
 import os
 import re
@@ -12,7 +10,7 @@ import logging
 from pathlib import Path
 from datetime import datetime
 
-# ------------------ MANUAL TIME SYNC (fix for Pyrogram [16] error) ------------------
+# ------------------ MANUAL TIME SYNC (final Pyrogram fix) ------------------
 import datetime as dt
 utc_now = dt.datetime.utcnow()
 local_now = dt.datetime.now()
@@ -21,19 +19,19 @@ if abs(offset) > 1:
     print(f"[INFO] Local time offset detected: {offset:.2f}s")
     print("[INFO] Adjusting Pyrogram timestamps internally (UTC sync active).")
     time.time = lambda: dt.datetime.utcnow().timestamp()
-# ------------------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 
 from pyrogram import Client, filters
 from pyrogram.types import Message
 import motor.motor_asyncio
 
-# ------------------ CREDENTIAL PLACEHOLDERS (REPLACE BEFORE DEPLOY) ------------------
+# ------------------ BOT CREDENTIALS ------------------
 BOT_TOKEN = "7852091851:AAHQr_w4hi-RuJ5sJ8JvQCo_fOZtf6EWhvk"
 API_ID = 123456
 API_HASH = "db274cb8e9167e731d9c8305197badeb"
 MONGO_URI = "mongodb+srv://moviescorn:moviescorn@hitu.4jr5k.mongodb.net/?retryWrites=true&w=majority&appName=Hitu"
 ADMIN_ID = 6861892595
-# -------------------------------------------------------------------------
+# -----------------------------------------------------
 
 # Defaults
 WATERMARK_METHOD = os.getenv("WATERMARK_METHOD", "delogo").lower()
@@ -54,7 +52,7 @@ logger = logging.getLogger("wm-bot")
 # Pyrogram Client
 APP = Client("wmremover", bot_token=BOT_TOKEN, api_id=API_ID, api_hash=API_HASH)
 
-# Mongo Client - default DB will be set to 'hitu' after replacing MONGO_URI
+# Mongo Client
 mongo_client = motor.motor_asyncio.AsyncIOMotorClient(MONGO_URI)
 db = mongo_client["hitu"]
 COL_USERS = db["users"]
