@@ -1,19 +1,11 @@
 #!/usr/bin/env python3
-import os
-import sys
-import time
-import logging
-import subprocess
-import asyncio
+import os, sys, time, logging, subprocess, asyncio, cv2, numpy as np, pytesseract, shutil
 from pathlib import Path
-import shutil
-import cv2
-import numpy as np
-import pytesseract
-from datetime import datetime
+from datetime import datetime, timezone
 from pymongo import MongoClient
 from pyrogram import Client, filters
 from pyrogram.types import Message
+import ntplib  # new time sync method
 
 # -------------------- CONFIG --------------------
 BOT_TOKEN = "7852091851:AAHQr_w4hi-RuJ5sJ8JvQCo_fOZ"
@@ -25,22 +17,25 @@ MONGO_URI = "mongodb+srv://moviescorn:moviescorn@hitu.4jr5k.mongodb.net/?retryWr
 WORKDIR = Path("/tmp/bot_work")
 WORKDIR.mkdir(parents=True, exist_ok=True)
 
-# -------------------- LOGGING --------------------
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("bot")
 
-# -------------------- TIME SYNC --------------------
-def sync_time(retry=3):
-    for i in range(retry):
-        try:
-            os.system("ntpdate -u time.google.com || ntpsec-ntpdate -u time.google.com || true")
-            log.info("Time sync attempt %s done", i + 1)
-            return
-        except Exception as e:
-            log.warning("Time sync failed: %s", e)
-            time.sleep(2)
+# -------------------- TIME SYNC (Python method) --------------------
+def sync_time():
+    try:
+        client = ntplib.NTPClient()
+        response = client.request("time.google.com", version=3)
+        offset = response.offset
+        log.info(f"✅ Network time synced (offset={offset:.6f}s)")
+        # Adjust Python’s internal clock offset
+        time.time = lambda: time._orig_time() + offset
+    except Exception as e:
+        log.warning(f"Time sync skipped: {e}")
 
-sync_time(5)
+if not hasattr(time, "_orig_time"):
+    time._orig_time = time.time
+
+sync_time()
 
 # -------------------- MONGO CONNECT --------------------
 try:
@@ -50,13 +45,13 @@ try:
     logs_col = db["logs"]
     log.info("✅ MongoDB connected successfully.")
 except Exception as e:
-    log.error("❌ MongoDB connection failed: %s", e)
+    log.error(f"❌ MongoDB connection failed: {e}")
     sys.exit(1)
 
 # -------------------- TELEGRAM BOT --------------------
 app = Client("removeurl_bot", bot_token=BOT_TOKEN, api_id=API_ID, api_hash=API_HASH)
 
-# -------------------- DATABASE HELPERS --------------------
+# -------------------- HELPERS --------------------
 def register_user(user):
     if not user:
         return
@@ -65,7 +60,7 @@ def register_user(user):
             "user_id": user.id,
             "username": user.username,
             "first_name": user.first_name,
-            "joined_at": datetime.utcnow()
+            "joined_at": datetime.now(timezone.utc)
         })
 
 def save_log(user_id, file_type, status="done"):
@@ -73,7 +68,7 @@ def save_log(user_id, file_type, status="done"):
         "user_id": user_id,
         "file_type": file_type,
         "status": status,
-        "timestamp": datetime.utcnow()
+        "timestamp": datetime.now(timezone.utc)
     })
 
 # -------------------- OCR & PROCESSING --------------------
@@ -85,12 +80,10 @@ def ocr_detect_boxes(image_path):
     data = pytesseract.image_to_data(rgb, output_type=pytesseract.Output.DICT)
     boxes = []
     for i, text in enumerate(data["text"]):
-        text = text.strip()
-        if not text:
+        if not text.strip():
             continue
-        if any(s in text.lower() for s in [".com", ".in", "http", "www", "/", ".net", ".org"]):
-            x, y, w, h = data["left"][i], data["top"][i], data["width"][i], data["height"][i]
-            boxes.append((x, y, w, h))
+        if any(k in text.lower() for k in [".com", ".in", "http", "www", "/", ".net", ".org"]):
+            boxes.append((data["left"][i], data["top"][i], data["width"][i], data["height"][i]))
     return boxes
 
 def inpaint_image(input_path, boxes, output_path):
@@ -107,15 +100,12 @@ def largest_box(boxes):
     return sorted(boxes, key=lambda b: b[2]*b[3], reverse=True)[0]
 
 def build_ffmpeg_cmd(input_video, x, y, w, h, output_video):
-    return [
-        "ffmpeg", "-y", "-i", input_video,
-        "-vf", f"delogo=x={x}:y={y}:w={w}:h={h}:show=0",
-        "-c:a", "copy", "-preset", "fast",
-        output_video
-    ]
+    return ["ffmpeg", "-y", "-i", input_video, "-vf",
+            f"delogo=x={x}:y={y}:w={w}:h={h}:show=0",
+            "-c:a", "copy", "-preset", "fast", output_video]
 
-# -------------------- PROCESSORS --------------------
-async def process_image(path_in, path_out, msg: Message):
+# -------------------- PROCESS --------------------
+async def process_image(path_in, path_out, msg):
     boxes = ocr_detect_boxes(path_in)
     if boxes:
         await msg.edit_text("Text detect hua — remove kar rahi hun...")
@@ -124,7 +114,7 @@ async def process_image(path_in, path_out, msg: Message):
         shutil.copyfile(path_in, path_out)
         await msg.edit_text("Koi URL text nahi mila, original bhej rahi hun.")
 
-async def process_video(path_in, path_out, msg: Message):
+async def process_video(path_in, path_out, msg):
     tmp_frame = WORKDIR / "frame.jpg"
     subprocess.run(["ffmpeg", "-y", "-i", path_in, "-vframes", "1", str(tmp_frame)],
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -134,9 +124,9 @@ async def process_video(path_in, path_out, msg: Message):
         await msg.edit_text("Koi URL text nahi mila, original bhej rahi hun.")
         return
     x, y, w, h = largest_box(boxes)
-    cmd = build_ffmpeg_cmd(path_in, x, y, w, h, path_out)
     await msg.edit_text("Video process ho raha hai (thoda time lagega)...")
-    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(build_ffmpeg_cmd(path_in, x, y, w, h, path_out),
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     await msg.edit_text("Ho gaya ✅")
 
 # -------------------- COMMANDS --------------------
@@ -151,9 +141,9 @@ async def help_cmd(_, msg):
 
 @app.on_message(filters.command("stats") & filters.user(ADMIN_IDS))
 async def stats_cmd(_, msg):
-    total_users = users_col.count_documents({})
-    total_logs = logs_col.count_documents({})
-    await msg.reply_text(f"👥 Users: {total_users}\n📂 Files processed: {total_logs}")
+    u = users_col.count_documents({})
+    f = logs_col.count_documents({})
+    await msg.reply_text(f"👥 Users: {u}\n📂 Files processed: {f}")
 
 @app.on_message(filters.photo | filters.video)
 async def media_handler(_, msg):
@@ -180,7 +170,5 @@ async def media_handler(_, msg):
 
     await prog.delete()
 
-# -------------------- MAIN --------------------
 if __name__ == "__main__":
-    sync_time(5)
     app.run()
