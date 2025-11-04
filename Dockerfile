@@ -2,25 +2,24 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-# Install system dependencies + ntpsec-ntpdate for time sync
+# Install required system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr \
     ffmpeg \
     libsm6 \
     libxrender1 \
     libxext6 \
-    ntpsec-ntpdate \
  && rm -rf /var/lib/apt/lists/*
 
 # Upgrade pip
 RUN pip install --upgrade pip
 
-# Copy and install Python dependencies
+# Copy requirements and install Python dependencies
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 
 # Copy bot files
 COPY . .
 
-# Sync time before starting the bot
-CMD ntpdate -s time.google.com || ntpsec-ntpdate -s time.google.com && python3 bot.py
+# Start the bot
+CMD ["python3", "bot.py"]
