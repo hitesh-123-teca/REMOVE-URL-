@@ -1,7 +1,6 @@
-pyrogram
-tgcrypto
-pymongo
-ffmpeg-python
-opencv-python
-numpy
-python-dotenv
+pyrogram==2.0.106
+tgcrypto==1.2.5
+pymongo==4.5.0
+opencv-python-headless==4.8.1.78
+numpy==1.24.3
+python-dotenv==1.0.0
