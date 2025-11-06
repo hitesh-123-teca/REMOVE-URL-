@@ -4,6 +4,7 @@ import logging
 from datetime import datetime, timedelta
 import shutil
 import subprocess
+import signal
 from typing import Dict, List
 
 from pyrogram import Client, filters, idle
@@ -21,19 +22,29 @@ logger = logging.getLogger(__name__)
 
 # Configuration
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-API_ID = int(os.getenv("API_ID", ""))
+API_ID = int(os.getenv("API_ID", "1234567"))
 API_HASH = os.getenv("API_HASH")
-MONGO_URI = os.getenv("MONGO_URI", "")
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
 
 # Admin user ID
 ADMIN_ID = 6861892595
 
 # Initialize MongoDB
-mongo_client = MongoClient(MONGO_URI)
-db = mongo_client["hitu"]
-users_collection = db["users"]
-jobs_collection = db["jobs"]
-settings_collection = db["settings"]
+try:
+    mongo_client = MongoClient(MONGO_URI)
+    db = mongo_client["hitu"]
+    users_collection = db["users"]
+    jobs_collection = db["jobs"]
+    settings_collection = db["settings"]
+    logger.info("✅ MongoDB connected successfully")
+except Exception as e:
+    logger.error(f"❌ MongoDB connection failed: {e}")
+    # Continue without MongoDB for basic functionality
+    mongo_client = None
+    db = None
+    users_collection = None
+    jobs_collection = None
+    settings_collection = None
 
 # Create bot
 app = Client(
@@ -53,7 +64,13 @@ DEFAULT_SETTINGS = {
 TEMP_DIR = "/tmp/wm_bot"
 os.makedirs(TEMP_DIR, exist_ok=True)
 
+# Global variable to track if bot should run
+running = True
+
 def get_settings():
+    if not settings_collection:
+        return DEFAULT_SETTINGS
+    
     settings = settings_collection.find_one({"_id": "current"})
     if not settings:
         settings_collection.insert_one({"_id": "current", **DEFAULT_SETTINGS})
@@ -61,11 +78,12 @@ def get_settings():
     return settings
 
 def update_settings(method: str, params: str):
-    settings_collection.update_one(
-        {"_id": "current"},
-        {"$set": {"method": method, "params": params}},
-        upsert=True
-    )
+    if settings_collection:
+        settings_collection.update_one(
+            {"_id": "current"},
+            {"$set": {"method": method, "params": params}},
+            upsert=True
+        )
 
 def create_progress_message(job_id: str, percentage: int, status: str):
     return f"🔄 **Processing Status**\n\n**Job ID:** `{job_id}`\n**Progress:** {percentage}%\n**Status:** {status}"
@@ -103,20 +121,22 @@ async def process_video_with_delogo(input_path: str, output_path: str, params: s
         cmd = f'ffmpeg -i "{input_path}" -vf "delogo=x={x}:y={y}:w={w}:h={h}" -c:a copy "{output_path}" -y'
         
         # Update initial progress
-        jobs_collection.update_one(
-            {"job_id": job_id},
-            {"$set": {"progress": 20, "status": "processing"}}
-        )
+        if jobs_collection:
+            jobs_collection.update_one(
+                {"job_id": job_id},
+                {"$set": {"progress": 20, "status": "processing"}}
+            )
         await message.edit_text(create_progress_message(job_id, 20, "Removing watermark..."))
         
         # Run FFmpeg command
         success = run_ffmpeg_command(cmd)
         
         if success:
-            jobs_collection.update_one(
-                {"job_id": job_id},
-                {"$set": {"progress": 90, "status": "finalizing"}}
-            )
+            if jobs_collection:
+                jobs_collection.update_one(
+                    {"job_id": job_id},
+                    {"$set": {"progress": 90, "status": "finalizing"}}
+                )
             await message.edit_text(create_progress_message(job_id, 90, "Finalizing..."))
             
         return success
@@ -135,6 +155,9 @@ async def process_video_with_inpaint(input_path: str, output_path: str, params: 
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        
+        if total_frames == 0:
+            raise Exception("Could not read video frames")
         
         # Parse parameters
         params_dict = {}
@@ -173,10 +196,11 @@ async def process_video_with_inpaint(input_path: str, output_path: str, params: 
             if frame_count % max(1, total_frames // 10) == 0:
                 percentage = min(int((frame_count / total_frames) * 100), 90)
                 
-                jobs_collection.update_one(
-                    {"job_id": job_id},
-                    {"$set": {"progress": percentage, "status": "processing"}}
-                )
+                if jobs_collection:
+                    jobs_collection.update_one(
+                        {"job_id": job_id},
+                        {"$set": {"progress": percentage, "status": "processing"}}
+                    )
                 
                 progress_msg = create_progress_message(job_id, percentage, "Inpainting...")
                 await message.edit_text(progress_msg)
@@ -185,10 +209,11 @@ async def process_video_with_inpaint(input_path: str, output_path: str, params: 
         out.release()
         
         # Final progress update
-        jobs_collection.update_one(
-            {"job_id": job_id},
-            {"$set": {"progress": 90, "status": "finalizing"}}
-        )
+        if jobs_collection:
+            jobs_collection.update_one(
+                {"job_id": job_id},
+                {"$set": {"progress": 90, "status": "finalizing"}}
+            )
         await message.edit_text(create_progress_message(job_id, 90, "Finalizing..."))
         
         return True
@@ -202,19 +227,20 @@ async def start_command(client: Client, message: Message):
     """Handle /start command"""
     user_id = message.from_user.id
     
-    # Save user to database
-    users_collection.update_one(
-        {"user_id": user_id},
-        {
-            "$set": {
-                "username": message.from_user.username,
-                "first_name": message.from_user.first_name,
-                "last_name": message.from_user.last_name,
-                "joined_at": datetime.now()
-            }
-        },
-        upsert=True
-    )
+    # Save user to database if available
+    if users_collection:
+        users_collection.update_one(
+            {"user_id": user_id},
+            {
+                "$set": {
+                    "username": message.from_user.username,
+                    "first_name": message.from_user.first_name,
+                    "last_name": message.from_user.last_name,
+                    "joined_at": datetime.now()
+                }
+            },
+            upsert=True
+        )
     
     welcome_text = """
 🌊 **Welcome to Video Watermark Remover Bot!**
@@ -239,15 +265,23 @@ async def status_command(client: Client, message: Message):
         await message.reply_text("🚫 This command is for admin only.")
         return
     
-    # Get stats from database
-    total_users = users_collection.count_documents({})
-    total_jobs = jobs_collection.count_documents({})
-    completed_jobs = jobs_collection.count_documents({"status": "completed"})
-    processing_jobs = jobs_collection.count_documents({"status": "processing"})
-    queued_jobs = jobs_collection.count_documents({"status": "queued"})
-    
-    # Get bot start time (you can store this in DB on first start)
-    status_text = f"""
+    if not jobs_collection or not users_collection:
+        status_text = """
+🤖 **Bot Status**
+
+**Database:** ❌ Not connected
+**Status:** ✅ Bot is running
+**Server:** Koyeb
+"""
+    else:
+        # Get stats from database
+        total_users = users_collection.count_documents({})
+        total_jobs = jobs_collection.count_documents({})
+        completed_jobs = jobs_collection.count_documents({"status": "completed"})
+        processing_jobs = jobs_collection.count_documents({"status": "processing"})
+        queued_jobs = jobs_collection.count_documents({"status": "queued"})
+        
+        status_text = f"""
 🤖 **Bot Status**
 
 **Total Users:** {total_users}
@@ -257,7 +291,7 @@ async def status_command(client: Client, message: Message):
 **Queued Jobs:** {queued_jobs}
 
 **Server:** Koyeb
-**Database:** MongoDB
+**Database:** ✅ Connected
 **Status:** ✅ Running
     """
     
@@ -270,19 +304,24 @@ async def jobs_command(client: Client, message: Message):
         await message.reply_text("🚫 This command is for admin only.")
         return
     
-    recent_jobs = jobs_collection.find().sort("created_at", -1).limit(10)
-    
-    if recent_jobs is None:
-        await message.reply_text("No jobs found.")
+    if not jobs_collection:
+        await message.reply_text("❌ Database not connected")
         return
     
+    recent_jobs = jobs_collection.find().sort("created_at", -1).limit(10)
+    
     jobs_text = "📊 **Recent Jobs**\n\n"
+    job_count = 0
     for job in recent_jobs:
         jobs_text += f"**Job ID:** `{job['job_id']}`\n"
         jobs_text += f"**User:** {job.get('user_id', 'N/A')}\n"
         jobs_text += f"**Status:** {job.get('status', 'unknown')}\n"
         jobs_text += f"**Progress:** {job.get('progress', 0)}%\n"
         jobs_text += "─" * 20 + "\n"
+        job_count += 1
+    
+    if job_count == 0:
+        jobs_text = "No jobs found."
     
     await message.reply_text(jobs_text)
 
@@ -324,19 +363,20 @@ async def handle_video(client: Client, message: Message):
     """Handle incoming videos and documents"""
     user_id = message.from_user.id
     
-    # Create job record
+    # Create job record if database available
     job_id = f"job_{user_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-    job_data = {
-        "job_id": job_id,
-        "user_id": user_id,
-        "status": "queued",
-        "progress": 0,
-        "created_at": datetime.now(),
-        "file_name": "",
-        "method": "",
-        "params": ""
-    }
-    jobs_collection.insert_one(job_data)
+    if jobs_collection:
+        job_data = {
+            "job_id": job_id,
+            "user_id": user_id,
+            "status": "queued",
+            "progress": 0,
+            "created_at": datetime.now(),
+            "file_name": "",
+            "method": "",
+            "params": ""
+        }
+        jobs_collection.insert_one(job_data)
     
     # Send initial message
     progress_msg = await message.reply_text(create_progress_message(job_id, 0, "Downloading..."))
@@ -346,10 +386,11 @@ async def handle_video(client: Client, message: Message):
         download_path = os.path.join(TEMP_DIR, f"input_{job_id}.mp4")
         
         # Update progress
-        jobs_collection.update_one(
-            {"job_id": job_id},
-            {"$set": {"progress": 10, "status": "downloading"}}
-        )
+        if jobs_collection:
+            jobs_collection.update_one(
+                {"job_id": job_id},
+                {"$set": {"progress": 10, "status": "downloading"}}
+            )
         await progress_msg.edit_text(create_progress_message(job_id, 10, "Downloading..."))
         
         await message.download(download_path)
@@ -360,16 +401,17 @@ async def handle_video(client: Client, message: Message):
         params = settings["params"]
         
         # Update job info
-        jobs_collection.update_one(
-            {"job_id": job_id},
-            {"$set": {
-                "file_name": os.path.basename(download_path),
-                "method": method,
-                "params": params,
-                "status": "processing",
-                "progress": 20
-            }}
-        )
+        if jobs_collection:
+            jobs_collection.update_one(
+                {"job_id": job_id},
+                {"$set": {
+                    "file_name": os.path.basename(download_path),
+                    "method": method,
+                    "params": params,
+                    "status": "processing",
+                    "progress": 20
+                }}
+            )
         
         await progress_msg.edit_text(create_progress_message(job_id, 20, "Starting processing..."))
         
@@ -383,10 +425,11 @@ async def handle_video(client: Client, message: Message):
         
         if success and os.path.exists(output_path):
             # Update progress to completed
-            jobs_collection.update_one(
-                {"job_id": job_id},
-                {"$set": {"status": "completed", "progress": 100}}
-            )
+            if jobs_collection:
+                jobs_collection.update_one(
+                    {"job_id": job_id},
+                    {"$set": {"status": "completed", "progress": 100}}
+                )
             
             await progress_msg.edit_text(create_progress_message(job_id, 100, "Uploading..."))
             
@@ -406,10 +449,11 @@ async def handle_video(client: Client, message: Message):
         logger.error(f"Error processing video: {e}")
         
         # Update job as failed
-        jobs_collection.update_one(
-            {"job_id": job_id},
-            {"$set": {"status": "failed", "error": str(e)}}
-        )
+        if jobs_collection:
+            jobs_collection.update_one(
+                {"job_id": job_id},
+                {"$set": {"status": "failed", "error": str(e)}}
+            )
         
         await progress_msg.edit_text(f"❌ **Processing Failed**\n\nError: {str(e)}\n\nPlease try again with a different video.")
     
@@ -425,7 +469,7 @@ async def handle_video(client: Client, message: Message):
 
 async def cleanup_old_files():
     """Cleanup old temporary files periodically"""
-    while True:
+    while running:
         try:
             now = datetime.now()
             for filename in os.listdir(TEMP_DIR):
@@ -440,28 +484,49 @@ async def cleanup_old_files():
         
         await asyncio.sleep(3600)  # Run every hour
 
+def signal_handler(signum, frame):
+    """Handle shutdown signals"""
+    global running
+    logger.info(f"Received signal {signum}, shutting down...")
+    running = False
+
 async def main():
     """Main function to start the bot"""
+    global running
+    
+    # Set up signal handlers
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
+    
     logger.info("🤖 Starting Watermark Remover Bot...")
     
     # Start cleanup task
     asyncio.create_task(cleanup_old_files())
     
-    # Start the bot
-    await app.start()
-    logger.info("✅ Bot started successfully!")
-    
-    # Get bot info
-    me = await app.get_me()
-    logger.info(f"🤖 Bot username: @{me.username}")
-    logger.info(f"🆔 Bot ID: {me.id}")
-    
-    # Run until stopped
-    await idle()
-    
-    # Stop the bot
-    await app.stop()
-    logger.info("🛑 Bot stopped!")
+    try:
+        # Start the bot
+        await app.start()
+        logger.info("✅ Bot started successfully!")
+        
+        # Get bot info
+        me = await app.get_me()
+        logger.info(f"🤖 Bot username: @{me.username}")
+        logger.info(f"🆔 Bot ID: {me.id}")
+        
+        # Keep the bot running
+        while running:
+            await asyncio.sleep(1)
+            
+    except Exception as e:
+        logger.error(f"Bot error: {e}")
+    finally:
+        # Stop the bot gracefully
+        logger.info("🛑 Stopping bot...")
+        try:
+            await app.stop()
+            logger.info("✅ Bot stopped successfully!")
+        except Exception as e:
+            logger.error(f"Error stopping bot: {e}")
 
 if __name__ == "__main__":
     # Run the main function
