@@ -21,9 +21,9 @@ logger = logging.getLogger(__name__)
 
 # Configuration
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-API_ID = int(os.getenv("API_ID", "1234567"))
+API_ID = int(os.getenv("API_ID", ""))
 API_HASH = os.getenv("API_HASH")
-MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
+MONGO_URI = os.getenv("MONGO_URI", "")
 
 # Admin user ID
 ADMIN_ID = 6861892595
