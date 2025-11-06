@@ -3,24 +3,27 @@ import asyncio
 import logging
 from datetime import datetime, timedelta
 import shutil
+import subprocess
 from typing import Dict, List
 
-from pyrogram import Client, filters
+from pyrogram import Client, filters, idle
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from pymongo import MongoClient
-import ffmpeg
 import cv2
 import numpy as np
 
 # Logging setup
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 # Configuration
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-API_ID = int(os.getenv("API_ID", ""))
+API_ID = int(os.getenv("API_ID", "1234567"))
 API_HASH = os.getenv("API_HASH")
-MONGO_URI = os.getenv("MONGO_URI", "")
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
 
 # Admin user ID
 ADMIN_ID = 6861892595
@@ -33,7 +36,12 @@ jobs_collection = db["jobs"]
 settings_collection = db["settings"]
 
 # Create bot
-app = Client("watermark_remover_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+app = Client(
+    "watermark_remover_bot", 
+    api_id=API_ID, 
+    api_hash=API_HASH, 
+    bot_token=BOT_TOKEN
+)
 
 # Default settings
 DEFAULT_SETTINGS = {
@@ -62,6 +70,19 @@ def update_settings(method: str, params: str):
 def create_progress_message(job_id: str, percentage: int, status: str):
     return f"🔄 **Processing Status**\n\n**Job ID:** `{job_id}`\n**Progress:** {percentage}%\n**Status:** {status}"
 
+def run_ffmpeg_command(cmd):
+    """Run FFmpeg command and return success status"""
+    try:
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        if result.returncode == 0:
+            return True
+        else:
+            logger.error(f"FFmpeg error: {result.stderr}")
+            return False
+    except Exception as e:
+        logger.error(f"FFmpeg execution error: {e}")
+        return False
+
 async def process_video_with_delogo(input_path: str, output_path: str, params: str, message: Message, job_id: str):
     """Process video using FFmpeg delogo filter"""
     try:
@@ -79,60 +100,26 @@ async def process_video_with_delogo(input_path: str, output_path: str, params: s
         h = params_dict.get('h', '50')
         
         # Build FFmpeg command
-        stream = ffmpeg.input(input_path)
+        cmd = f'ffmpeg -i "{input_path}" -vf "delogo=x={x}:y={y}:w={w}:h={h}" -c:a copy "{output_path}" -y'
         
-        # Apply delogo filter with progress
-        stream = ffmpeg.filter(stream, 'delogo', x=x, y=y, w=w, h=h)
+        # Update initial progress
+        jobs_collection.update_one(
+            {"job_id": job_id},
+            {"$set": {"progress": 20, "status": "processing"}}
+        )
+        await message.edit_text(create_progress_message(job_id, 20, "Removing watermark..."))
         
-        # Output with progress
-        stream = ffmpeg.output(stream, output_path, 
-                              vcodec='libx264',
-                              acodec='copy',
-                              **{'max_muxing_queue_size': 9999})
+        # Run FFmpeg command
+        success = run_ffmpeg_command(cmd)
         
-        # Run with progress callback
-        process = ffmpeg.run_async(stream, pipe_stdout=True, pipe_stderr=True)
-        
-        # Monitor progress
-        duration = None
-        while True:
-            line = process.stderr.readline().decode('utf-8')
-            if not line:
-                break
-                
-            # Extract duration
-            if 'Duration:' in line:
-                try:
-                    time_str = line.split('Duration: ')[1].split(',')[0]
-                    h, m, s = time_str.split(':')
-                    duration = int(h) * 3600 + int(m) * 60 + float(s)
-                except:
-                    pass
+        if success:
+            jobs_collection.update_one(
+                {"job_id": job_id},
+                {"$set": {"progress": 90, "status": "finalizing"}}
+            )
+            await message.edit_text(create_progress_message(job_id, 90, "Finalizing..."))
             
-            # Extract current time and calculate progress
-            if 'time=' in line and duration:
-                try:
-                    time_str = line.split('time=')[1].split(' ')[0]
-                    h, m, s = time_str.split(':')
-                    current_time = int(h) * 3600 + int(m) * 60 + float(s)
-                    percentage = min(int((current_time / duration) * 100), 100)
-                    
-                    # Update progress in database and message
-                    jobs_collection.update_one(
-                        {"job_id": job_id},
-                        {"$set": {"progress": percentage, "status": "processing"}}
-                    )
-                    
-                    # Update message every 10% progress
-                    if percentage % 10 == 0:
-                        progress_msg = create_progress_message(job_id, percentage, "Processing...")
-                        await message.edit_text(progress_msg)
-                        
-                except Exception as e:
-                    logger.error(f"Progress tracking error: {e}")
-        
-        process.wait()
-        return True
+        return success
         
     except Exception as e:
         logger.error(f"Delogo processing error: {e}")
@@ -182,21 +169,28 @@ async def process_video_with_inpaint(input_path: str, output_path: str, params: 
             out.write(inpainted_frame)
             frame_count += 1
             
-            # Update progress
-            if frame_count % 30 == 0:  # Update every 30 frames
-                percentage = min(int((frame_count / total_frames) * 100), 100)
+            # Update progress every 10%
+            if frame_count % max(1, total_frames // 10) == 0:
+                percentage = min(int((frame_count / total_frames) * 100), 90)
                 
                 jobs_collection.update_one(
                     {"job_id": job_id},
                     {"$set": {"progress": percentage, "status": "processing"}}
                 )
                 
-                if percentage % 10 == 0:
-                    progress_msg = create_progress_message(job_id, percentage, "Inpainting...")
-                    await message.edit_text(progress_msg)
+                progress_msg = create_progress_message(job_id, percentage, "Inpainting...")
+                await message.edit_text(progress_msg)
         
         cap.release()
         out.release()
+        
+        # Final progress update
+        jobs_collection.update_one(
+            {"job_id": job_id},
+            {"$set": {"progress": 90, "status": "finalizing"}}
+        )
+        await message.edit_text(create_progress_message(job_id, 90, "Finalizing..."))
+        
         return True
         
     except Exception as e:
@@ -245,26 +239,26 @@ async def status_command(client: Client, message: Message):
         await message.reply_text("🚫 This command is for admin only.")
         return
     
-    # Calculate uptime (you might want to track this properly)
-    uptime = "1 day 2 hours"  # Example
-    
     # Get stats from database
     total_users = users_collection.count_documents({})
     total_jobs = jobs_collection.count_documents({})
     completed_jobs = jobs_collection.count_documents({"status": "completed"})
     processing_jobs = jobs_collection.count_documents({"status": "processing"})
+    queued_jobs = jobs_collection.count_documents({"status": "queued"})
     
+    # Get bot start time (you can store this in DB on first start)
     status_text = f"""
 🤖 **Bot Status**
 
-**Uptime:** {uptime}
 **Total Users:** {total_users}
 **Total Jobs:** {total_jobs}
 **Completed Jobs:** {completed_jobs}
 **Processing Jobs:** {processing_jobs}
+**Queued Jobs:** {queued_jobs}
 
 **Server:** Koyeb
 **Database:** MongoDB
+**Status:** ✅ Running
     """
     
     await message.reply_text(status_text)
@@ -277,6 +271,10 @@ async def jobs_command(client: Client, message: Message):
         return
     
     recent_jobs = jobs_collection.find().sort("created_at", -1).limit(10)
+    
+    if recent_jobs is None:
+        await message.reply_text("No jobs found.")
+        return
     
     jobs_text = "📊 **Recent Jobs**\n\n"
     for job in recent_jobs:
@@ -298,7 +296,13 @@ async def set_params_command(client: Client, message: Message):
     try:
         args = message.text.split()[1:]
         if len(args) < 2:
-            await message.reply_text("Usage: /set_params <method> <parameters>\n\nMethods: delogo, inpaint\nExample: /set_params delogo x=iw-160:y=ih-60:w=150:h=50")
+            await message.reply_text("""Usage: /set_params <method> <parameters>
+
+Methods: delogo, inpaint
+
+Examples:
+/set_params delogo x=iw-160:y=ih-60:w=150:h=50
+/set_params inpaint x=20:y=20:w=200:h=60""")
             return
         
         method = args[0]
@@ -340,6 +344,14 @@ async def handle_video(client: Client, message: Message):
     try:
         # Download video
         download_path = os.path.join(TEMP_DIR, f"input_{job_id}.mp4")
+        
+        # Update progress
+        jobs_collection.update_one(
+            {"job_id": job_id},
+            {"$set": {"progress": 10, "status": "downloading"}}
+        )
+        await progress_msg.edit_text(create_progress_message(job_id, 10, "Downloading..."))
+        
         await message.download(download_path)
         
         # Get settings
@@ -355,11 +367,11 @@ async def handle_video(client: Client, message: Message):
                 "method": method,
                 "params": params,
                 "status": "processing",
-                "progress": 10
+                "progress": 20
             }}
         )
         
-        await progress_msg.edit_text(create_progress_message(job_id, 10, "Processing video..."))
+        await progress_msg.edit_text(create_progress_message(job_id, 20, "Starting processing..."))
         
         # Process video based on method
         output_path = os.path.join(TEMP_DIR, f"output_{job_id}.mp4")
@@ -369,7 +381,7 @@ async def handle_video(client: Client, message: Message):
         else:  # inpaint
             success = await process_video_with_inpaint(download_path, output_path, params, progress_msg, job_id)
         
-        if success:
+        if success and os.path.exists(output_path):
             # Update progress to completed
             jobs_collection.update_one(
                 {"job_id": job_id},
@@ -428,17 +440,29 @@ async def cleanup_old_files():
         
         await asyncio.sleep(3600)  # Run every hour
 
-@app.on_startup()
-async def startup():
-    """Run on bot startup"""
-    logger.info("🤖 Watermark Remover Bot Started!")
+async def main():
+    """Main function to start the bot"""
+    logger.info("🤖 Starting Watermark Remover Bot...")
+    
+    # Start cleanup task
     asyncio.create_task(cleanup_old_files())
-
-@app.on_shutdown()
-async def shutdown():
-    """Run on bot shutdown"""
-    logger.info("🤖 Watermark Remover Bot Stopped!")
+    
+    # Start the bot
+    await app.start()
+    logger.info("✅ Bot started successfully!")
+    
+    # Get bot info
+    me = await app.get_me()
+    logger.info(f"🤖 Bot username: @{me.username}")
+    logger.info(f"🆔 Bot ID: {me.id}")
+    
+    # Run until stopped
+    await idle()
+    
+    # Stop the bot
+    await app.stop()
+    logger.info("🛑 Bot stopped!")
 
 if __name__ == "__main__":
-    logger.info("Starting Watermark Remover Bot...")
-    app.run()
+    # Run the main function
+    asyncio.run(main())
