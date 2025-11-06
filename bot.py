@@ -21,9 +21,9 @@ logger = logging.getLogger(__name__)
 
 # Configuration from environment variables
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-API_ID = int(os.getenv("API_ID", "1234567"))
+API_ID = int(os.getenv("API_ID", ""))
 API_HASH = os.getenv("API_HASH")
-MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
+MONGO_URI = os.getenv("MONGO_URI", "")
 
 # Admin user ID
 ADMIN_ID = 6861892595
@@ -594,4 +594,17 @@ async def main():
     except Exception as e:
         logger.error(f"Bot error: {e}")
     finally:
+        # Stop the bot gracefully
+        logger.info("🛑 Stopping bot...")
+        running = False
+        cleanup_task.cancel()
         
+        try:
+            await app.stop()
+            logger.info("✅ Bot stopped successfully!")
+        except Exception as e:
+            logger.error(f"Error stopping bot: {e}")
+
+if __name__ == "__main__":
+    # Run the main function
+    asyncio.run(main())
