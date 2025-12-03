@@ -4,3 +4,6 @@ pymongo==4.5.0
 opencv-python-headless==4.8.1.78
 numpy==1.24.3
 python-dotenv==1.0.0
+Flask==2.3.2
+gunicorn==21.2.0
+gevent==23.12.0
