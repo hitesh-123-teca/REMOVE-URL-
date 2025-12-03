@@ -20,7 +20,6 @@ health_app = Flask(__name__)
 @health_app.route("/", methods=["GET"])
 def home():
     return "OK", 200
-
 # -------------------------------------------------------
 
 # Logging setup
@@ -36,7 +35,7 @@ API_ID = int(os.getenv("API_ID", "0") or 0)
 API_HASH = os.getenv("API_HASH")
 MONGO_URI = os.getenv("MONGO_URI", "")
 
-# Admin user ID
+# Admin user ID (override via env if needed)
 ADMIN_ID = int(os.getenv("ADMIN_ID", "6861892595"))
 
 # Global variables
@@ -106,7 +105,7 @@ def update_settings(method: str, params: str):
 def create_progress_message(job_id: str, percentage: int, status: str):
     return f"🔄 **Processing Status**\n\n**Job ID:** `{job_id}`\n**Progress:** {percentage}%\n**Status:** {status}"
 
-def run_ffmpeg_command(cmd: List[str], timeout: int = 600) -> bool:
+def run_ffmpeg_command(cmd: List[str], timeout: int = 1200) -> bool:
     """Run FFmpeg command (list form) and return success status"""
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
@@ -129,12 +128,11 @@ async def safe_edit(message: Message, text: str, min_sleep: float = 0.6):
         await asyncio.sleep(min_sleep)
     except Exception as e:
         logger.debug(f"Ignoring edit error (likely flood/wait): {e}")
-        # don't raise, continue
+        # continue without raising
 
 async def process_video_with_delogo(input_path: str, output_path: str, params: str, message: Message, job_id: str):
     """Process video using FFmpeg delogo filter"""
     try:
-        # Parse parameters (allow both space-separated or colon-separated)
         params_str = params.replace(' ', '')
         params_dict = {}
         for param in params_str.split(':'):
@@ -147,7 +145,6 @@ async def process_video_with_delogo(input_path: str, output_path: str, params: s
         w = params_dict.get('w', '150')
         h = params_dict.get('h', '50')
 
-        # Build FFmpeg command as list (safe for filenames with spaces)
         vf = f"delogo=x={x}:y={y}:w={w}:h={h}"
         cmd = [
             "ffmpeg", "-y", "-i", input_path,
@@ -156,7 +153,6 @@ async def process_video_with_delogo(input_path: str, output_path: str, params: s
             output_path
         ]
 
-        # Update initial progress
         if jobs_collection:
             try:
                 jobs_collection.update_one({"job_id": job_id}, {"$set": {"progress": 20, "status": "processing"}})
@@ -165,7 +161,6 @@ async def process_video_with_delogo(input_path: str, output_path: str, params: s
 
         await safe_edit(message, create_progress_message(job_id, 20, "Removing watermark..."))
 
-        # Run FFmpeg command
         success = run_ffmpeg_command(cmd, timeout=1200)
 
         if success:
@@ -174,13 +169,12 @@ async def process_video_with_delogo(input_path: str, output_path: str, params: s
                     jobs_collection.update_one({"job_id": job_id}, {"$set": {"progress": 90, "status": "finalizing"}})
                 except Exception as e:
                     logger.error(f"Database update error: {e}")
-
             await safe_edit(message, create_progress_message(job_id, 90, "Finalizing..."))
 
         return success
 
     except Exception as e:
-        logger.error(f"Delogo processing error: {e}")
+        logger.error(f"Delogo processing error: {e}", exc_info=True)
         return False
 
 async def process_video_with_inpaint(input_path: str, output_path: str, params: str, message: Message, job_id: str):
@@ -191,7 +185,6 @@ async def process_video_with_inpaint(input_path: str, output_path: str, params: 
         if not cap.isOpened():
             raise Exception("Could not open video file")
 
-        # Get video properties
         fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
         fps = max(1, int(round(fps)))
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -202,7 +195,6 @@ async def process_video_with_inpaint(input_path: str, output_path: str, params: 
             cap.release()
             raise Exception("Could not read video frames")
 
-        # Parse params
         params_str = params.replace(' ', '')
         params_dict = {}
         for param in params_str.split(':'):
@@ -215,7 +207,6 @@ async def process_video_with_inpaint(input_path: str, output_path: str, params: 
         w = int(params_dict.get('w', '200'))
         h = int(params_dict.get('h', '60'))
 
-        # Setup video writer (mp4v)
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
 
@@ -227,7 +218,6 @@ async def process_video_with_inpaint(input_path: str, output_path: str, params: 
             if not ret:
                 break
 
-            # Create mask and inpaint
             mask = np.zeros((height, width), dtype=np.uint8)
             cv2.rectangle(mask, (x, y), (x + w, y + h), 255, -1)
             inpainted_frame = cv2.inpaint(frame, mask, 3, cv2.INPAINT_TELEA)
@@ -255,7 +245,6 @@ async def process_video_with_inpaint(input_path: str, output_path: str, params: 
                 logger.error(f"Database update error: {e}")
 
         await safe_edit(message, create_progress_message(job_id, 90, "Finalizing..."))
-
         return True
 
     except Exception as e:
@@ -398,7 +387,6 @@ Examples:
 
 @app.on_message(filters.video | filters.document)
 async def handle_video(client: Client, message: Message):
-    # Basic mime-type check for documents
     if message.document and not (message.document.mime_type or "").startswith("video"):
         await message.reply_text("❌ Only video files are supported. Send a video file (mp4/mkv).")
         return
@@ -516,7 +504,7 @@ async def cleanup_old_files():
             for filename in os.listdir(TEMP_DIR):
                 filepath = os.path.join(TEMP_DIR, filename)
                 if os.path.isfile(filepath):
-                    file_time = datetime.fromtimestamp(os.path.getctime(filepath))
+                    file_time = os.path.getctime(filepath)
                     if now - datetime.utcfromtimestamp(file_time) > timedelta(hours=1):
                         os.remove(filepath)
                         logger.info(f"Cleaned up: {filename}")
