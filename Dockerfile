@@ -2,35 +2,30 @@ FROM python:3.9-slim
 
 WORKDIR /app
 
-# Install system dependencies (ffmpeg + build deps for gevent/opencv)
-RUN apt-get update && apt-get install -y \
-    ffmpeg \
-    build-essential \
-    gcc \
-    libffi-dev \
-    libssl-dev \
-    pkg-config \
-    python3-dev \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+# Prevent interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
 
-# Copy requirements first (for better caching)
+# Install minimal FFmpeg (no heavy GUI libs)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements first for caching
 COPY requirements.txt .
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy bot code
+# Copy application code
 COPY . .
 
 # Create temp directory
 RUN mkdir -p /tmp/wm_bot
 
-# Set environment variables for better Python performance
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 
-# Expose health port (optional, Koyeb uses health TCP check)
+# Expose health port for Koyeb health-check
 EXPOSE 8080
 
 # Start Gunicorn (serve Flask health_app) in background and then run bot
