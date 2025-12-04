@@ -1,1 +1,48 @@
 
+# ============================================
+# TELEGRAM AUTO FORWARD BOT - CONFIGURATION
+# ============================================
+
+# [REQUIRED] Telegram API Credentials
+# Get from: https://my.telegram.org
+API_ID=12345678
+API_HASH=abcdef1234567890abcdef1234567890
+
+# [REQUIRED] Bot Token
+# Get from: @BotFather on Telegram
+BOT_TOKEN=1234567890:ABCdefGHIjklMNOpqrsTUVwxyz-ABCDEFGHI
+
+# [REQUIRED] Channel IDs
+# Must be in format: -1001234567890
+# Bot must be admin in both channels
+SOURCE_CHANNEL=-1001234567890
+DESTINATION_CHANNEL=-1009876543210
+
+# [REQUIRED] MongoDB Connection
+# Local: mongodb://localhost:27017
+# Atlas: mongodb+srv://username:password@cluster.mongodb.net/
+MONGODB_URI=mongodb://localhost:27017
+DATABASE_NAME=telegram_bot
+
+# [OPTIONAL] Bot Settings
+BOT_NAME=AutoForwardBot
+ADMIN_ID=123456789  # Your Telegram ID for notifications
+SESSION_STRING=  # Leave empty for first run, then copy from logs
+
+# [OPTIONAL] Content Processing
+REMOVE_URLS=true  # Remove URLs from captions
+REMOVE_MENTIONS=true  # Remove @mentions from captions
+ADD_WATERMARK=false  # Add watermark text to forwarded videos
+WATERMARK_TEXT=Shared via Bot
+
+# [OPTIONAL] Performance Settings
+MAX_FILE_SIZE=524288000  # 500MB in bytes
+RATE_LIMIT=20  # Messages per minute
+DELAY_BETWEEN_FORWARDS=2.0  # Seconds between forwards
+
+# [OPTIONAL] Web Server (for health checks)
+WEB_SERVER_PORT=8080
+WEB_SERVER_HOST=0.0.0.0
+
+# [OPTIONAL] Logging
+LOG_LEVEL=INFO
