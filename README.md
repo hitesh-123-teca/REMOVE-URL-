@@ -1,38 +1,27 @@
-# HITESH-AUTO-POSTER
+# Telegram URL Removal Bot
 
-Auto media processor that removes URLs from captions and replaces the original message with a cleaned one.
+A Telegram bot that removes URLs from video content and text messages with MongoDB integration.
 
 ## Features
-- Removes links from media captions (regex + safe)
-- Stores seen files in MongoDB to prevent duplicates
-- Deletes duplicate messages automatically
-- Shows processing message while cleaning and replaces original with cleaned media
-- Admin commands: /start, /pause, /resume, /stats
 
-## Setup
-1. Create folder `HITESH-AUTO-POSTER`
-2. Place all files in correct structure (bot/ folder + top-level files)
-3. Create `.env` from `.env.example` and fill secrets
-4. Build and run:
-   - Locally:
-     ```
-     pip install -r requirements.txt
-     python -m bot.main
-     python bot-web.py  # optional, web healthcheck
-     ```
-   - Docker:
-     ```
-     docker build -t hitesh-auto-poster .
-     docker run -e BOT_TOKEN=... -e API_ID=... -e API_HASH=... -e MONGO_URI=... -p 8080:8080 hitesh-auto-poster
-     ```
-   - Koyeb: connect repo, set env vars in Koyeb dashboard, deploy from Dockerfile.
+✅ **URL Removal** - Remove URLs from text and video captions
+✅ **Duplicate Detection** - Automatic duplicate file detection and deletion
+✅ **MongoDB Integration** - Store user data and file records
+✅ **User Statistics** - Track usage and provide insights
+✅ **Admin Panel** - Manage users and system
+✅ **Multi-language Support** - Customizable text
+✅ **Docker Support** - Easy deployment with Docker
+✅ **Koyeb Ready** - Optimized for Koyeb deployment
 
-## Permissions
-- Bot must be added to chats/groups and given:
-  - Read/View messages
-  - Post messages
-  - Delete messages (required for auto-delete)
+## Prerequisites
 
-## Notes
-- Keep `USE_HASH_FOR_DUPLICATES=false` by default for performance.
-- If you enable hashing, bot will download media temporarily to compute SHA256.
+- Python 3.11+
+- MongoDB (local or Atlas)
+- Telegram Bot Token (from @BotFather)
+
+## Installation
+
+### 1. Clone the repository
+```bash
+git clone https://github.com/yourusername/telegram-url-remover-bot.git
+cd telegram-url-remover-bot
