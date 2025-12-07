@@ -84,9 +84,9 @@ class TelegramBot:
         self.application.add_handler(
             MessageHandler(filters.Document.VIDEO, self.handle_video_document)
         )
-        self.application.add_handler(
-            MessageHandler(filters.Document.ALL, self.handle_document)
-        )
+        
+        # ❌ Removed → because handle_document doesn't exist (this was the crash)
+        # self.application.add_handler(MessageHandler(filters.Document.ALL, self.handle_document))
         
         # Callback query handler for buttons
         self.application.add_handler(CallbackQueryHandler(self.button_callback))
