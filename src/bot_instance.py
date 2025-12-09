@@ -1,6 +1,6 @@
 """
 Main Telegram Bot instance - Fixed Version
-No Markdown errors, Working properly
+With proper context handling for callbacks
 """
 
 import logging
@@ -317,7 +317,7 @@ class FileManager:
 
 # Main Bot Class
 class TelegramBot:
-    """Main Telegram Bot - Fixed for Markdown Errors"""
+    """Main Telegram Bot - Fixed for Button Callbacks"""
     
     def __init__(self, token: str, mongo_uri: str):
         """Initialize bot"""
@@ -368,7 +368,7 @@ class TelegramBot:
             MessageHandler(filters.Document.VIDEO, self.handle_video_document)
         )
         
-        # Callback handler
+        # Callback handler - FIXED
         self.application.add_handler(CallbackQueryHandler(self.button_callback))
         
         # Error handler
@@ -935,21 +935,40 @@ Thank you for using our bot! ❤️
         await update.message.reply_text(about_message)
     
     async def button_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle button callbacks"""
+        """Handle button callbacks - FIXED WITH CONTEXT"""
         query = update.callback_query
         await query.answer()
         
         data = query.data
         user = query.from_user
         
+        # Create a new update-like object with the message
+        # for command handlers that need it
+        class MockUpdate:
+            def __init__(self, message, user):
+                self.message = message
+                self.effective_user = user
+                self.effective_message = message
+        
+        # Create mock context
+        class MockContext:
+            def __init__(self, user_data=None):
+                self.user_data = user_data or {}
+        
+        mock_context = MockContext(context.user_data if context else {})
+        
         if data == "help":
-            await self.help_command(query.message)
+            # Create a mock update with the message
+            mock_update = MockUpdate(query.message, user)
+            await self.help_command(mock_update, mock_context)
             await query.message.delete()
         elif data == "settings":
-            await self.settings_command(query.message)
+            mock_update = MockUpdate(query.message, user)
+            await self.settings_command(mock_update, mock_context)
             await query.message.delete()
         elif data == "stats":
-            await self.stats_command(query.message)
+            mock_update = MockUpdate(query.message, user)
+            await self.stats_command(mock_update, mock_context)
             await query.message.delete()
         elif data == "clean_text":
             await query.edit_message_text(
@@ -957,19 +976,21 @@ Thank you for using our bot! ❤️
                 "/clean <your text here>"
             )
         elif data == "home":
-            await self.start_command(query.message, context)
+            mock_update = MockUpdate(query.message, user)
+            await self.start_command(mock_update, mock_context)
             await query.message.delete()
         elif data.startswith("show_original:"):
             original_text = context.user_data.get('original_text', 'Not available')
             await query.edit_message_text(f"📄 Original Text\n\n{original_text}")
         elif data == "view_files":
-            await self.files_command(query.message)
+            mock_update = MockUpdate(query.message, user)
+            await self.files_command(mock_update, mock_context)
             await query.message.delete()
         elif data == "refresh_stats":
-            await self.stats_command(query.message)
+            mock_update = MockUpdate(query.message, user)
+            await self.stats_command(mock_update, mock_context)
             await query.message.delete()
         elif data == "toggle_duplicates":
-            # Toggle logic would go here
             await query.edit_message_text("Feature coming soon!")
         elif data == "toggle_notifications":
             await query.edit_message_text("Feature coming soon!")
