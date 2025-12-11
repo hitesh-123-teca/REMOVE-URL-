@@ -1,49 +1,27 @@
-name: telegram-url-remover
+name: telegram-video-bot
 services:
   - name: bot
     docker:
       image: python:3.11-slim
-      args:
-        requirements: |
-          apt-get update && apt-get install -y gcc g++ libmagic1 curl
-          pip install python-telegram-bot==20.7 pymongo[srv]==4.6.0 python-dotenv==1.0.0 aiofiles==23.2.1
-    env:
-      - name: BOT_TOKEN
-        secret: true
-      - name: MONGO_URI
-        secret: true
-      - name: ADMIN_IDS
-        secret: true
-      - name: PYTHONUNBUFFERED
-        value: "1"
-      - name: PORT
-        value: "8080"
-    regions:
-      - fra
-    instance:
-      type: nano
-      disk: 512
     ports:
       - port: 8080
-        http: /
+        protocol: http
+    env:
+      - name: TELEGRAM_BOT_TOKEN
+        value: "your_bot_token"
+      - name: MONGO_URI
+        value: "your_mongodb_uri"
     routes:
       - path: /
-    healthchecks:
+        port: 8080
+    instance:
+      type: nano
+    regions:
+      - fra
+    build:
+      dockerfile: Dockerfile
+    health_checks:
       http:
         path: /health
         port: 8080
-        scheme: HTTP
-        initial_delay: 30
-        period: 60
-        success_threshold: 1
-        timeout: 5
-    scalings:
-      min: 1
-      max: 2
-    deployments:
-      - name: production
-        env:
-          - name: LOG_LEVEL
-            value: "INFO"
-        strategies:
-          - name: rolling-update
+        interval: 30s
