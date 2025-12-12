@@ -1,27 +1,39 @@
-name: telegram-video-bot
+name: telegram-video-forward-bot
 services:
   - name: bot
     docker:
       image: python:3.11-slim
+      args:
+        - name: PYTHON_VERSION
+          value: "3.11"
     ports:
       - port: 8080
         protocol: http
     env:
       - name: TELEGRAM_BOT_TOKEN
-        value: "your_bot_token"
+        value: "YOUR_BOT_TOKEN"
       - name: MONGO_URI
-        value: "your_mongodb_uri"
-    routes:
-      - path: /
-        port: 8080
+        value: "YOUR_MONGODB_URI"
+      - name: DATABASE_NAME
+        value: "telegram_video_bot"
+      - name: AUTO_THUMBNAIL
+        value: "true"
+      - name: CHECK_DUPLICATES
+        value: "true"
+      - name: DELETE_DUPLICATES
+        value: "true"
+      - name: MAX_FILE_SIZE
+        value: "2000000000"
+    regions:
+      - fra  # Frankfurt
+      - nyc  # New York
     instance:
       type: nano
-    regions:
-      - fra
-    build:
-      dockerfile: Dockerfile
     health_checks:
       http:
-        path: /health
+        path: /
         port: 8080
         interval: 30s
+        timeout: 5s
+    build:
+      dockerfile: Dockerfile
