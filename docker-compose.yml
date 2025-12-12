@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:6
+    container_name: telegram_bot_mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+      - ./mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password123
+      MONGO_INITDB_DATABASE: telegram_video_bot
+    restart: unless-stopped
+
+  bot:
+    build: .
+    container_name: telegram_video_bot
+    depends_on:
+      - mongodb
+    ports:
+      - "8080:8080"
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - MONGO_URI=mongodb://admin:password123@mongodb:27017/telegram_video_bot?authSource=admin
+      - DATABASE_NAME=telegram_video_bot
+      - ADMIN_ID=${ADMIN_ID}
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./temp:/app/temp
+      - ./logs:/app/logs
+    restart: unless-stopped
+    command: python main.py
+
+volumes:
+  mongodb_data:
