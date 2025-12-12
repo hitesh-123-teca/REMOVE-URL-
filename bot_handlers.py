@@ -28,55 +28,42 @@ class BotHandlers:
     # =========================================================
     # START COMMAND
     # =========================================================
-
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Start command with welcome message"""
-
         welcome_text = """
 🤖 *Video Forward Bot Started!*
 
-🌟 *Features:*
-• MongoDB Database Storage
-• Unlimited File Forwarding
-• Admin-Only Channel Setup
-• Auto Duplicate Detection & Delete
-• URL Removal from Captions
-• Auto Thumbnail Generation (3–5 sec frame)
-• Basic Watermark Removal
-• Welcome Message
-• Koyeb Deployment Ready
+*🌟 Features:*
+✅ MongoDB Database Storage
+✅ Unlimited File Forwarding
+✅ Admin-Only Channel Setup (No ID Entry)
+✅ Auto Duplicate Detection & Delete
+✅ URL Removal from Captions
+✅ Auto Thumbnail Generation (3–5 sec)
+✅ Basic Watermark Removal
+✅ Welcome Message
+✅ Koyeb Deployment Ready
 
 📋 *Setup Commands:*
-/set_source - Set source channel
-/set_target - Set target channel
-/stats - Show bot statistics
-/settings - Configure bot settings
-/help - Show help guide
+/set_source  
+/set_target  
+/stats  
+/settings  
+/help  
 
-⚙️ *Setup Instructions:*
-1. Add bot as *ADMIN* in both channels  
-2. Use `/set_source` in source channel  
-3. Use `/set_target` in target channel  
-4. Start sending videos!
-
-🔄 *Auto Processing:*
-• Removes URLs from captions  
-• Generates thumbnails automatically  
-• Detects & removes duplicates  
-• Forwards to target channel  
-• Unlimited file sizes supported  
+⚙️ *Setup:*
+1. Add bot as ADMIN in both channels  
+2. Use /set_source in source channel  
+3. Use /set_target in target channel  
 
 📊 *Status:* Active  
 🔧 *Version:* 2.0.0
 """
-
         await update.message.reply_text(
             welcome_text,
             parse_mode=ParseMode.MARKDOWN,
             disable_web_page_preview=True
         )
 
-        # Save user data
         user = update.effective_user
         self.db.save_user({
             "user_id": user.id,
@@ -90,68 +77,55 @@ class BotHandlers:
     # =========================================================
     # HELP COMMAND
     # =========================================================
-
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Help command"""
-
         help_text = """
 🆘 *Help Guide*
 
 📌 *Commands:*
-• /start  
-• /help  
-• /set_source  
-• /set_target  
-• /stats  
-• /settings  
-• /clear_duplicates  
+/start  
+/help  
+/set_source  
+/set_target  
+/stats  
+/settings  
+/clear_duplicates  
 
-⚡ *Features Explained:*
+⚡ *Features:*
 • Auto URL Removal  
 • Auto Thumbnail  
-• Duplicate Removal  
+• Duplicate Detection  
 • Watermark Removal  
-• Unlimited Size Support  
+• Unlimited Video Support  
 
 ⚠️ *Troubleshooting:*
 • Check admin permissions  
 • Check duplicate settings  
-• Check caption cleaning patterns
+• Check caption cleaning  
 """
-
         await update.message.reply_text(help_text, parse_mode=ParseMode.MARKDOWN)
 
     # =========================================================
     # SET SOURCE CHANNEL
     # =========================================================
-
     async def set_source(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Set source channel"""
-
         try:
             chat = update.effective_chat
 
             if chat.type == "private":
                 await update.message.reply_text(
-                    "❌ Use this command *inside the source channel*.",
+                    "❌ Use this command *in the source channel*.",
                     parse_mode=ParseMode.MARKDOWN
                 )
                 return
 
-            # Admin check
-            try:
-                bot_member = await context.bot.get_chat_member(chat.id, context.bot.id)
-                if bot_member.status not in ["administrator", "creator"]:
-                    await update.message.reply_text(
-                        "❌ Bot must be *ADMIN* in this channel.",
-                        parse_mode=ParseMode.MARKDOWN
-                    )
-                    return
-            except TelegramError as e:
-                await update.message.reply_text(f"❌ Admin check failed: {e}")
+            bot_member = await context.bot.get_chat_member(chat.id, context.bot.id)
+            if bot_member.status not in ["administrator", "creator"]:
+                await update.message.reply_text(
+                    "❌ Bot must be ADMIN in this channel.",
+                    parse_mode=ParseMode.MARKDOWN
+                )
                 return
 
-            # Save channel
             self.db.save_channel({
                 "chat_id": str(chat.id),
                 "title": chat.title,
@@ -163,19 +137,14 @@ class BotHandlers:
                 "set_by": update.effective_user.id
             })
 
-            self.db.update_bot_settings(
-                context.bot.id,
-                {
-                    "source_channel": str(chat.id),
-                    "source_title": chat.title,
-                    "source_username": chat.username
-                }
-            )
+            self.db.update_bot_settings(context.bot.id, {
+                "source_channel": str(chat.id),
+                "source_title": chat.title,
+                "source_username": chat.username
+            })
 
             await update.message.reply_text(
-                f"✅ *Source channel set!*\n"
-                f"📢 {chat.title}\n🆔 `{chat.id}`\n\n"
-                f"Next: Go to target channel and send /set_target",
+                f"✅ *Source channel set!*\n📢 {chat.title}\n🆔 `{chat.id}`",
                 parse_mode=ParseMode.MARKDOWN
             )
 
@@ -185,34 +154,25 @@ class BotHandlers:
     # =========================================================
     # SET TARGET CHANNEL
     # =========================================================
-
     async def set_target(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Set target channel"""
-
         try:
             chat = update.effective_chat
 
             if chat.type == "private":
                 await update.message.reply_text(
-                    "❌ Use this command *inside the target channel*.",
+                    "❌ Use this in the target channel.",
                     parse_mode=ParseMode.MARKDOWN
                 )
                 return
 
-            # Admin check
-            try:
-                bot_member = await context.bot.get_chat_member(chat.id, context.bot.id)
-                if bot_member.status not in ["administrator", "creator"]:
-                    await update.message.reply_text(
-                        "❌ Bot must be ADMIN here.",
-                        parse_mode=ParseMode.MARKDOWN
-                    )
-                    return
-            except TelegramError as e:
-                await update.message.reply_text(f"❌ Admin check error: {e}")
+            bot_member = await context.bot.get_chat_member(chat.id, context.bot.id)
+            if bot_member.status not in ["administrator", "creator"]:
+                await update.message.reply_text(
+                    "❌ Bot must be ADMIN in this channel.",
+                    parse_mode=ParseMode.MARKDOWN
+                )
                 return
 
-            # Save channel
             self.db.save_channel({
                 "chat_id": str(chat.id),
                 "title": chat.title,
@@ -224,19 +184,14 @@ class BotHandlers:
                 "set_by": update.effective_user.id
             })
 
-            self.db.update_bot_settings(
-                context.bot.id,
-                {
-                    "target_channel": str(chat.id),
-                    "target_title": chat.title,
-                    "target_username": chat.username
-                }
-            )
+            self.db.update_bot_settings(context.bot.id, {
+                "target_channel": str(chat.id),
+                "target_title": chat.title,
+                "target_username": chat.username
+            })
 
             await update.message.reply_text(
-                f"✅ *Target channel set!*\n"
-                f"📢 {chat.title}\n🆔 `{chat.id}`\n\n"
-                f"Setup complete!",
+                f"✅ *Target channel set!*\n📢 {chat.title}\n🆔 `{chat.id}`",
                 parse_mode=ParseMode.MARKDOWN
             )
 
@@ -244,40 +199,35 @@ class BotHandlers:
             await update.message.reply_text(f"❌ Error: {e}")
 
     # =========================================================
-    # BOT STATISTICS
+    # STATS
     # =========================================================
-
     async def stats(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Show bot statistics"""
-
         try:
-            total_stats = self.db.get_total_stats()
-            daily_stats = self.db.get_daily_stats(7)
+            total = self.db.get_total_stats()
+            daily = self.db.get_daily_stats(7)
             settings = self.db.get_bot_settings(context.bot.id)
 
             stats_text = f"""
 📊 *Bot Statistics*
 
 📈 *Overall:*
-• Total Files: `{total_stats.get('total_files', 0)}`
-• Total Chats: `{total_stats.get('total_chats', 0)}`
+• Total Files: `{total.get('total_files',0)}`
+• Total Chats: `{total.get('total_chats',0)}`
 • Files Today: `{self.db.get_file_count():,}`
 
 📅 *Last 7 Days:*
 """
-            for stat in daily_stats:
-                stats_text += f"• {stat['_id'].strftime('%Y-%m-%d')}: `{stat.get('total_files', 0)}` files\n"
+            for stat in daily:
+                stats_text += f"• {stat['_id'].strftime('%Y-%m-%d')}: `{stat.get('total_files',0)}` files\n"
 
             stats_text += f"""
-🔧 *Bot Settings:*
+🔧 *Settings:*
 • Source Channel: {'Set' if settings and 'source_channel' in settings else 'Not Set'}
 • Target Channel: {'Set' if settings and 'target_channel' in settings else 'Not Set'}
-• Auto Thumbnail: {'Enabled' if Config.AUTO_THUMBNAIL else 'Disabled'}
-• Duplicate Check: {'Enabled' if Config.CHECK_DUPLICATES else 'Disabled'}
 
-⚙️ *System Status:*
+⚙️ Status:
 • Bot: Online  
-• Database: Connected  
+• DB: Connected  
 """
 
             await update.message.reply_text(stats_text, parse_mode=ParseMode.MARKDOWN)
@@ -286,22 +236,19 @@ class BotHandlers:
             await update.message.reply_text(f"❌ Error: {e}")
 
     # =========================================================
-    # BOT SETTINGS
+    # SETTINGS PAGE
     # =========================================================
-
     async def settings(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Show bot settings"""
-
         settings_text = """
 ⚙️ *Bot Settings*
 
 *Current Configuration:*
-• Auto Thumbnail: Enabled
-• Duplicate Check: Enabled
-• Watermark Removal: Disabled
-• Max File Size: 2GB
+• Auto Thumbnail: Enabled  
+• Duplicate Check: Enabled  
+• Watermark Removal: Disabled  
+• Max File Size: 2GB  
 
-*To change settings:* Edit `.env` file and restart bot.
+*To change settings: Edit `.env` file*
 
 *Environment Variables:*
 • AUTO_THUMBNAIL  
@@ -309,8 +256,23 @@ class BotHandlers:
 • WATERMARK_REMOVAL  
 • MAX_FILE_SIZE  
 """
+        await update.message.reply_text(settings_text, parse_mode=ParseMode.MARKDOWN)
 
-        await update.message.reply_text(
-            settings_text,
-            parse_mode=ParseMode.MARKDOWN
-        )
+    # =========================================================
+    # CLEAR DUPLICATES  ✅ FIX ADDED
+    # =========================================================
+    async def clear_duplicates(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Clear duplicate file records from database"""
+        try:
+            deleted = self.db.clear_duplicate_records()
+
+            await update.message.reply_text(
+                f"🧹 *Duplicate Cleanup Completed!*\n"
+                f"🗑️ Deleted Duplicate Entries: `{deleted}`",
+                parse_mode=ParseMode.MARKDOWN
+            )
+
+        except Exception as e:
+            await update.message.reply_text(
+                f"❌ Error clearing duplicates: {e}"
+            )
