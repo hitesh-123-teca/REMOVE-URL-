@@ -1,16 +1,7 @@
 #!/usr/bin/env python3
 """
 Telegram Video Forward Bot
-Main entry point with all features:
-1. MongoDB Database
-2. Unlimited File Forwarding
-3. Admin-based Channel Setup
-4. Duplicate Auto-Delete
-5. URL Removal from Captions
-6. Auto Thumbnail Generation
-7. Watermark Removal
-8. Welcome Message
-9. Koyeb Deployment Ready
+Main entry point with all features
 """
 
 import os
@@ -18,6 +9,7 @@ import sys
 import asyncio
 import logging
 from datetime import datetime
+from typing import Dict, Optional, List, Any, Tuple
 
 # Add current directory to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
