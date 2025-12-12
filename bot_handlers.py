@@ -4,16 +4,17 @@ Bot command and message handlers
 
 import os
 import tempfile
+import asyncio
 from datetime import datetime
 from typing import Dict, Optional
 
-from telegram import Update, InputFile, InputMediaVideo
+from telegram import Update
 from telegram.ext import ContextTypes, CallbackContext
 from telegram.constants import ParseMode, ChatAction
 from telegram.error import TelegramError
 
 from config import Config
-from helpers import format_size, format_time, create_progress_message
+from helpers import format_size, create_progress_message
 
 class BotHandlers:
     """All bot command and message handlers"""
@@ -63,7 +64,6 @@ class BotHandlers:
 
 *📊 Status:* ✅ Active
 *🔧 Version:* 2.0.0
-*👨‍💻 Support:* Contact for help
 """
         
         await update.message.reply_text(
@@ -114,8 +114,6 @@ class BotHandlers:
 • Bot not forwarding? Check admin permissions
 • Duplicates not deleting? Check bot permissions in target channel
 • Caption not cleaned? Check URL patterns
-
-*📞 Support:* Contact administrator
 """
         
         await update.message.reply_text(
