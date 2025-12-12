@@ -16,7 +16,6 @@ from telegram.ext import (
     ContextTypes,
     CallbackContext
 )
-from telegram.constants import ParseMode
 
 from config import Config
 from database import MongoDB
@@ -57,7 +56,6 @@ class VideoForwardBot:
         await self.application.initialize()
         await self.application.start()
         await self.application.updater.start_polling(
-            allowed_updates=Update.ALL_TYPES,
             drop_pending_updates=True
         )
         
