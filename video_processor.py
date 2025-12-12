@@ -1,21 +1,17 @@
 """
-Video processing utilities:
-1. Thumbnail extraction
-2. Watermark removal
-3. URL removal from captions
-4. File operations
+Video processing utilities
 """
 
 import re
 import os
 import tempfile
 import subprocess
-from typing import Optional, Tuple, List
+from typing import Optional, Tuple, List, Dict
 from pathlib import Path
 
 import cv2
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image
 from moviepy.editor import VideoFileClip
 
 from config import Config
@@ -74,7 +70,7 @@ class VideoProcessor:
     
     # ========== THUMBNAIL GENERATION ==========
     
-    async def extract_thumbnail(self, video_path: str, time_sec: int = None) -> Optional[str]:
+    async def extract_thumbnail(self, video_path: str, time_sec: Optional[int] = None) -> Optional[str]:
         """Extract thumbnail from video at specified time"""
         if time_sec is None:
             time_sec = Config.THUMBNAIL_TIME
@@ -106,7 +102,7 @@ class VideoProcessor:
             print(f"Thumbnail extraction error: {e}")
             return None
     
-    async def extract_multiple_thumbnails(self, video_path: str, times: List[int] = None) -> List[str]:
+    async def extract_multiple_thumbnails(self, video_path: str, times: Optional[List[int]] = None) -> List[str]:
         """Extract multiple thumbnails at different times"""
         if times is None:
             times = [2, 4, 6, 10, 15]
@@ -147,11 +143,10 @@ class VideoProcessor:
             output_path = os.path.join(self.temp_dir, f"no_watermark_{os.path.basename(video_path)}")
             
             # Use FFmpeg for watermark removal (basic approach)
-            # This is a placeholder - you need to customize based on watermark position
             command = [
                 'ffmpeg',
                 '-i', video_path,
-                '-vf', 'delogo=x=10:y=10:w=100:h=30:show=0',  # Example: remove logo at (10,10) with size 100x30
+                '-vf', 'delogo=x=10:y=10:w=100:h=30:show=0',
                 '-c:a', 'copy',
                 output_path
             ]
@@ -211,7 +206,7 @@ class VideoProcessor:
                 'ffmpeg',
                 '-i', video_path,
                 '-c:v', 'libx264',
-                '-crf', str(quality),  # Lower value = better quality
+                '-crf', str(quality),
                 '-c:a', 'aac',
                 '-b:a', '128k',
                 output_path
