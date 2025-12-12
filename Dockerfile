@@ -20,6 +20,6 @@ COPY . .
 RUN useradd -m -u 1000 botuser && chown -R botuser:botuser /app
 USER botuser
 
-RUN mkdir -p temp logs
+RUN mkdir -p temp logs thumbnails processed
 
 CMD ["python", "main.py"]
