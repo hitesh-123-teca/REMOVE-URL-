@@ -16,8 +16,8 @@ class MongoDB:
     """MongoDB database handler"""
     
     def __init__(self):
-        self.client = None
-        self.db = None
+        self.client: Optional[MongoClient] = None
+        self.db: Optional[Any] = None
         self.connect()
         
     def connect(self):
@@ -80,7 +80,7 @@ class MongoDB:
         
         self.db.stats.create_indexes(stats_indexes)
         
-    # ========== SETTIONS OPERATIONS ==========
+    # ========== SETTINGS OPERATIONS ==========
     
     def get_bot_settings(self, bot_id: int) -> Dict:
         """Get bot settings"""
@@ -95,7 +95,7 @@ class MongoDB:
             upsert=True
         )
         
-    def get_setting(self, key: str, default=None):
+    def get_setting(self, key: str, default=None) -> Any:
         """Get a specific setting"""
         setting = self.db.settings.find_one({"key": key})
         return setting.get("value", default) if setting else default
@@ -139,16 +139,16 @@ class MongoDB:
         result = self.db.files.delete_one({"file_id": file_id})
         return result.deleted_count > 0
         
-    def get_file_count(self, chat_id: str = None) -> int:
+    def get_file_count(self, chat_id: Optional[str] = None) -> int:
         """Get total file count"""
-        query = {}
+        query: Dict = {}
         if chat_id:
             query["chat_id"] = chat_id
         return self.db.files.count_documents(query)
         
     # ========== STATISTICS ==========
     
-    def update_stats(self, chat_id: str = None):
+    def update_stats(self, chat_id: Optional[str] = None):
         """Update statistics"""
         today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         
@@ -223,7 +223,7 @@ class MongoDB:
         
     # ========== UTILITY METHODS ==========
     
-    def cleanup_old_files(self, days: int = 30):
+    def cleanup_old_files(self, days: int = 30) -> int:
         """Cleanup files older than specified days"""
         cutoff_date = datetime.now() - timedelta(days=days)
         
@@ -233,7 +233,8 @@ class MongoDB:
         
         return result.deleted_count
         
-    def generate_file_hash(self, file_path: str) -> str:
+    @staticmethod
+    def generate_file_hash(file_path: str) -> str:
         """Generate MD5 hash for file"""
         hash_md5 = hashlib.md5()
         
