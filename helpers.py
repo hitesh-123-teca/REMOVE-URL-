@@ -3,7 +3,6 @@ Utility functions for the bot
 """
 
 import os
-import shutil
 import hashlib
 from datetime import datetime
 from typing import List
@@ -58,12 +57,6 @@ def ensure_directories():
     for directory in directories:
         os.makedirs(directory, exist_ok=True)
 
-def validate_telegram_token(token: str) -> bool:
-    """Validate Telegram bot token format"""
-    import re
-    pattern = r'^\d+:[\w-]{35}$'
-    return bool(re.match(pattern, token))
-
 def get_timestamp() -> str:
     """Get current timestamp string"""
     return datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -101,25 +94,3 @@ def get_file_info(file_path: str) -> dict:
 def split_list(lst: List, n: int) -> List[List]:
     """Split list into chunks of size n"""
     return [lst[i:i + n] for i in range(0, len(lst), n)]
-
-def time_ago(timestamp: datetime) -> str:
-    """Convert timestamp to time ago string"""
-    now = datetime.now()
-    diff = now - timestamp
-    
-    if diff.days > 365:
-        years = diff.days // 365
-        return f"{years} year{'s' if years > 1 else ''} ago"
-    elif diff.days > 30:
-        months = diff.days // 30
-        return f"{months} month{'s' if months > 1 else ''} ago"
-    elif diff.days > 0:
-        return f"{diff.days} day{'s' if diff.days > 1 else ''} ago"
-    elif diff.seconds > 3600:
-        hours = diff.seconds // 3600
-        return f"{hours} hour{'s' if hours > 1 else ''} ago"
-    elif diff.seconds > 60:
-        minutes = diff.seconds // 60
-        return f"{minutes} minute{'s' if minutes > 1 else ''} ago"
-    else:
-        return "just now"
