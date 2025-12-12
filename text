@@ -1,0 +1,250 @@
+"""
+        await update.message.reply_text(
+            settings_text,
+            parse_mode=ParseMode.MARKDOWN
+        )
+    
+    async def clear_duplicates(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Clear duplicate file records"""
+        # This is an admin command
+        user_id = update.effective_user.id
+        
+        if Config.ADMIN_ID and str(user_id) != Config.ADMIN_ID:
+            await update.message.reply_text("❌ Admin only command")
+            return
+            
+        try:
+            # Find and count duplicates
+            pipeline = [
+                {"$group": {
+                    "_id": "$file_hash",
+                    "count": {"$sum": 1},
+                    "ids": {"$push": "$_id"}
+                }},
+                {"$match": {"count": {"$gt": 1}}}
+            ]
+            
+            duplicates = list(self.db.db.files.aggregate(pipeline))
+            
+            if not duplicates:
+                await update.message.reply_text("✅ No duplicates found")
+                return
+                
+            # Delete duplicates (keep first)
+            deleted_count = 0
+            for dup in duplicates:
+                # Keep first, delete rest
+                keep_id = dup["ids"][0]
+                delete_ids = dup["ids"][1:]
+                
+                result = self.db.db.files.delete_many({"_id": {"$in": delete_ids}})
+                deleted_count += result.deleted_count
+            
+            await update.message.reply_text(
+                f"✅ Cleared {deleted_count} duplicate records"
+            )
+            
+        except Exception as e:
+            await update.message.reply_text(
+                f"❌ Error clearing duplicates: {str(e)}"
+            )
+    
+    # ========== MESSAGE HANDLERS ==========
+    
+    async def handle_video(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle video messages"""
+        try:
+            message = update.effective_message
+            
+            # Send typing action
+            await context.bot.send_chat_action(
+                chat_id=message.chat_id,
+                action=ChatAction.UPLOAD_VIDEO
+            )
+            
+            # Get bot settings
+            settings = self.db.get_bot_settings(context.bot.id)
+            
+            # Check if source channel is set
+            source_channel = settings.get("source_channel")
+            if not source_channel:
+                return  # Source not set, ignore
+            
+            # Check if message is from source channel
+            if str(message.chat_id) != source_channel:
+                return  # Not from source channel, ignore
+            
+            # Check if target channel is set
+            target_channel = settings.get("target_channel")
+            if not target_channel:
+                return  # Target not set
+            
+            # Check file size limit
+            file = message.video or message.document
+            if file.file_size and file.file_size > Config.MAX_FILE_SIZE:
+                await message.reply_text(
+                    f"❌ File too large: {format_size(file.file_size)}\n"
+                    f"Max allowed: {format_size(Config.MAX_FILE_SIZE)}"
+                )
+                return
+            
+            # Get file info
+            file_id = file.file_id
+            file_name = getattr(file, 'file_name', 'video.mp4')
+            
+            # Download file
+            temp_file = await self._download_file(file, context)
+            if not temp_file:
+                await message.reply_text("❌ Failed to download file")
+                return
+            
+            # Calculate file hash for duplicate detection
+            file_hash = self.processor.calculate_file_hash(temp_file)
+            
+            # Check for duplicate
+            if Config.CHECK_DUPLICATES:
+                duplicate = self.db.find_file_by_hash(file_hash)
+                if duplicate:
+                    if Config.DELETE_DUPLICATES:
+                        try:
+                            await context.bot.delete_message(
+                                chat_id=target_channel,
+                                message_id=duplicate["target_message_id"]
+                            )
+                            print(f"✅ Deleted duplicate: {file_hash[:10]}")
+                        except:
+                            pass
+                    else:
+                        print(f"⚠️ Duplicate detected, skipping: {file_hash[:10]}")
+                        os.remove(temp_file)
+                        return
+            
+            # Process caption
+            caption = self.processor.clean_caption(message.caption)
+            
+            # Generate thumbnail
+            thumbnail_path = None
+            if Config.AUTO_THUMBNAIL:
+                thumbnail_path = await self.processor.extract_thumbnail(temp_file)
+            
+            # Optional: Watermark removal
+            processed_video = temp_file
+            if Config.REMOVE_WATERMARK:
+                processed_video = await self.processor.remove_watermark(temp_file)
+            
+            # Send progress message
+            progress_msg = await message.reply_text(
+                create_progress_message("⏳ Processing video...", 25)
+            )
+            
+            # Forward to target channel
+            try:
+                with open(processed_video, 'rb') as video_file:
+                    # Prepare media
+                    media_kwargs = {
+                        "chat_id": target_channel,
+                        "caption": caption,
+                        "parse_mode": ParseMode.MARKDOWN,
+                        "supports_streaming": True
+                    }
+                    
+                    # Add thumbnail if available
+                    if thumbnail_path and os.path.exists(thumbnail_path):
+                        media_kwargs["thumbnail"] = open(thumbnail_path, 'rb')
+                    
+                    # Send based on file type
+                    if message.video:
+                        media_kwargs["video"] = video_file
+                        sent_msg = await context.bot.send_video(**media_kwargs)
+                    else:
+                        media_kwargs["document"] = video_file
+                        media_kwargs["filename"] = file_name
+                        sent_msg = await context.bot.send_document(**media_kwargs)
+                    
+                    # Update progress
+                    await progress_msg.edit_text(
+                        create_progress_message("✅ Video forwarded successfully!", 100)
+                    )
+                    
+            except Exception as send_error:
+                await progress_msg.edit_text(f"❌ Error sending: {str(send_error)}")
+                raise
+            
+            # Save to database
+            file_data = {
+                "file_id": file_id,
+                "file_hash": file_hash,
+                "source_message_id": message.message_id,
+                "target_message_id": sent_msg.message_id,
+                "source_channel": source_channel,
+                "target_channel": target_channel,
+                "file_name": file_name,
+                "file_size": file.file_size or 0,
+                "caption": caption,
+                "has_thumbnail": bool(thumbnail_path),
+                "timestamp": datetime.now(),
+                "processed": True
+            }
+            
+            self.db.save_file(file_data)
+            self.db.update_stats(source_channel)
+            
+            print(f"✅ Forwarded: {file_name} ({format_size(file.file_size or 0)})")
+            
+            # Cleanup
+            self._cleanup_files([temp_file, processed_video, thumbnail_path])
+            
+            # Delete progress message after delay
+            await asyncio.sleep(3)
+            try:
+                await progress_msg.delete()
+            except:
+                pass
+            
+        except Exception as e:
+            print(f"❌ Error handling video: {e}")
+            try:
+                await message.reply_text(f"❌ Error: {str(e)}")
+            except:
+                pass
+    
+    # ========== HELPER METHODS ==========
+    
+    async def _download_file(self, file, context: CallbackContext) -> Optional[str]:
+        """Download file to temporary location"""
+        try:
+            file_obj = await file.get_file()
+            
+            # Create temp file
+            import uuid
+            temp_filename = f"temp_{uuid.uuid4().hex}.mp4"
+            temp_path = os.path.join(self.temp_dir, temp_filename)
+            
+            await file_obj.download_to_drive(temp_path)
+            
+            return temp_path
+        except Exception as e:
+            print(f"Download error: {e}")
+            return None
+    
+    def _cleanup_files(self, file_paths):
+        """Cleanup temporary files"""
+        for path in file_paths:
+            if path and os.path.exists(path):
+                try:
+                    os.remove(path)
+                except Exception as e:
+                    print(f"Cleanup error for {path}: {e}")
+    
+    async def error_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle errors"""
+        print(f"⚠️ Error occurred: {context.error}")
+        
+        if Config.ADMIN_ID:
+            try:
+                await context.bot.send_message(
+                    chat_id=Config.ADMIN_ID,
+                    text=f"❌ Bot Error:\n{str(context.error)}"
+                )
+            except:
+                pass
